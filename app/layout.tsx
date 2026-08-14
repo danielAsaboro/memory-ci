@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: { default: "Memory CI", template: "%s · Memory CI" },
   description: "Pull requests, evaluation, promotion, and rollback for production agent memory.",
-  metadataBase: new URL("https://memory-ci.example.com"),
+  metadataBase: new URL("https://memory-ci.asaborodaniel.chatgpt.site"),
   openGraph: {
     title: "Memory CI — ship agent memory like code",
     description: "Pull requests, behavioral evaluation, atomic promotion, lineage, and rollback for production agent memory.",

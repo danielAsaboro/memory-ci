@@ -47,3 +47,21 @@ export class OutboxRepository {
     );
   }
 }
+
+export async function claimPendingOutboxEvents(client: TenantTransaction["client"], limit = 100): Promise<Array<OutboxEvent & { tenantId: string }>> {
+  const result = await client.query<OutboxRow & { tenant_id: string }>(
+    `SELECT * FROM outbox_events WHERE delivered_at IS NULL AND available_at <= now()
+     ORDER BY available_at, id LIMIT $1 FOR UPDATE SKIP LOCKED`,
+    [limit],
+  );
+  return result.rows.map((row) => ({ ...mapOutbox(row), tenantId: row.tenant_id }));
+}
+
+export async function markOutboxFailure(client: TenantTransaction["client"], id: string, errorCode: string): Promise<void> {
+  await client.query(
+    `UPDATE outbox_events SET attempts=attempts+1,last_error_code=$2,
+       available_at=now() + (least(attempts + 1, 10)::STRING || ' seconds')::INTERVAL
+     WHERE id=$1 AND delivered_at IS NULL`,
+    [id, errorCode.slice(0, 255)],
+  );
+}

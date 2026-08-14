@@ -1,5 +1,5 @@
 {
   "DatabaseSecretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:memory-ci/database-placeholder",
   "BedrockModelId": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  "AllowedOrigin": "https://memory-ci.example.com"
+  "AllowedOrigin": "https://memory-ci.asaborodaniel.chatgpt.site"
 }
