@@ -22,6 +22,8 @@
     "cloud:evidence": "tsx scripts/cloud-evidence.ts",
     "demo:seed": "tsx scripts/seed-demo.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
+    "vector:evidence": "tsx scripts/vector-evidence.ts",
+    "ccloud:evidence": "tsx scripts/ccloud-evidence.ts",
     "verify": "npm test && npm run test:integration && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {

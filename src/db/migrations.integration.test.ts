@@ -157,12 +157,39 @@ describe("CockroachDB migrations", () => {
     ).rejects.toThrow(/dimension|vector/i);
   });
 
+  it("covers active vector lookup filters without fetching base rows", async () => {
+    await migrate(databaseUrl);
+    const index = await database.query<{ column_name: string; storing: boolean }>(
+      `SELECT column_name,storing
+       FROM [SHOW INDEX FROM memory_versions]
+       WHERE index_name='memory_versions_active_lookup_idx'
+       ORDER BY seq_in_index`,
+    );
+    expect(index.rows.map((row) => row.column_name)).toEqual(expect.arrayContaining([
+      "tenant_id", "namespace_id", "memory_class", "active", "embedding", "canonical_text",
+    ]));
+    expect(index.rows.some((row) => row.column_name === "embedding" && row.storing)).toBe(true);
+  });
+
   it("does not grant the application role permission to rewrite audit history", async () => {
     await migrate(databaseUrl);
     await database.query("SET ROLE memory_ci_app");
     await expect(database.query("UPDATE audit_events SET action = 'rewritten' WHERE false")).rejects.toThrow(
       /permission|privilege/i,
     );
+    await database.query("RESET ROLE");
+  });
+
+  it("creates a read-only auditor role and protects append-only release evidence", async () => {
+    await migrate(databaseUrl);
+    await database.query("SET ROLE memory_ci_auditor");
+    await expect(database.query("SELECT id FROM audit_events LIMIT 1")).resolves.toBeDefined();
+    await expect(database.query("INSERT INTO audit_events (tenant_id,id,actor_id,action,resource_type,resource_id,request_id,event_digest) VALUES (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'x','x',gen_random_uuid(),'x','x')")).rejects.toThrow(/permission|privilege/i);
+    await database.query("RESET ROLE");
+
+    await database.query("SET ROLE memory_ci_app");
+    await expect(database.query("DELETE FROM activation_events WHERE false")).rejects.toThrow(/permission|privilege/i);
+    await expect(database.query("UPDATE reviews SET reason = reason WHERE false")).rejects.toThrow(/permission|privilege/i);
     await database.query("RESET ROLE");
   });
 });
