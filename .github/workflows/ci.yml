@@ -20,7 +20,7 @@ jobs:
       TEST_DATABASE_ADMIN_URL: postgresql://root@localhost:26257/defaultdb?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
           cache: npm
@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
           cache: npm
