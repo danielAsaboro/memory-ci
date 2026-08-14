@@ -13,9 +13,13 @@
     "test:starter": "npm run build && node --test tests/rendered-html.test.mjs",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "test:e2e": "playwright test",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .aws-sam --ignore-pattern .sam-cli",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
+    "infra:validate": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 sam validate --lint --template-file infra/template.yaml",
+    "infra:build": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 npm_config_cache=/private/tmp/memory-ci-npm-cache sam build --template-file infra/template.yaml",
+    "aws:smoke": "tsx scripts/aws-smoke.ts",
+    "cloud:evidence": "tsx scripts/cloud-evidence.ts",
     "verify": "npm test && npm run test:integration && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {

@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Memory CI application and evidence plane
+
+Parameters:
+  DatabaseSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing the CockroachDB connection URL.
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:3000
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        DATABASE_SECRET_ARN: { Ref: DatabaseSecretArn }
+        EVIDENCE_BUCKET: { Ref: EvidenceBucket }
+        EVENT_BUS_NAME: { Ref: MemoryEventBus }
+        BEDROCK_MODEL_ID: { Ref: BedrockModelId }
+
+Resources:
+  ReviewerUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: memory-ci-reviewers
+      DeletionProtection: ACTIVE
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      UserPoolAddOns: { AdvancedSecurityMode: ENFORCED }
+  ReviewerUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: { Ref: ReviewerUserPool }
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes }
+  MemoryApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: v1
+      TracingEnabled: true
+      Cors:
+        AllowOrigin: { Fn::Sub: "'${AllowedOrigin}'" }
+        AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: { Fn::GetAtt: [ReviewerUserPool, Arn] }
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+            BucketKeyEnabled: true
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: retain-evidence
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 90 }
+  MemoryEventBus:
+    Type: AWS::Events::EventBus
+    Properties: { Name: memory-ci }
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Policies:
+        - PolicyName: memory-ci-api
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
+                Resource: { Fn::GetAtt: [ApiLogGroup, Arn] }
+              - Effect: Allow
+                Action: ["secretsmanager:GetSecretValue"]
+                Resource: { Ref: DatabaseSecretArn }
+              - Effect: Allow
+                Action: ["s3:PutObject", "s3:GetObject"]
+                Resource: { Fn::Sub: "${EvidenceBucket.Arn}/artifacts/*" }
+              - Effect: Allow
+                Action: ["events:PutEvents"]
+                Resource: { Fn::GetAtt: [MemoryEventBus, Arn] }
+              - Effect: Allow
+                Action: ["bedrock:InvokeModel"]
+                Resource: { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}" }
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: memory-ci-api
+      CodeUri: ../
+      Handler: src/lambda/api.handler
+      Role: { Fn::GetAtt: [ApiRole, Arn] }
+      Events:
+        Proxy:
+          Type: Api
+          Properties: { RestApiId: { Ref: MemoryApi }, Path: "/{proxy+}", Method: ANY }
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: [src/lambda/api.ts], Minify: true, Sourcemap: true, Target: es2022 }
+  OutboxFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: memory-ci-outbox
+      CodeUri: ../
+      Handler: src/lambda/outbox.handler
+      Role: { Fn::GetAtt: [ApiRole, Arn] }
+      Events:
+        Poll:
+          Type: ScheduleV2
+          Properties: { ScheduleExpression: "rate(1 minute)", State: ENABLED }
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: [src/lambda/outbox.ts], Minify: true, Sourcemap: true, Target: es2022 }
+  SandboxFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: memory-ci-sandbox-refund
+      CodeUri: ../
+      Handler: src/lambda/sandbox.handler
+      Role: { Fn::GetAtt: [ApiRole, Arn] }
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: [src/lambda/sandbox.ts], Minify: true, Sourcemap: true, Target: es2022 }
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/memory-ci-api, RetentionInDays: 30 }
+  OutboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/memory-ci-outbox, RetentionInDays: 30 }
+  SandboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/memory-ci-sandbox-refund, RetentionInDays: 30 }
+  ApiErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Memory CI API errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: { Ref: ApiFunction } }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  OutboxAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Memory CI outbox worker errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: { Ref: OutboxFunction } }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiUrl: { Value: { Fn::Sub: "https://${MemoryApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/v1" } }
+  EvidenceBucketName: { Value: { Ref: EvidenceBucket } }
+  EventBusName: { Value: { Ref: MemoryEventBus } }
+  UserPoolId: { Value: { Ref: ReviewerUserPool } }
+  UserPoolClientId: { Value: { Ref: ReviewerUserPoolClient } }
