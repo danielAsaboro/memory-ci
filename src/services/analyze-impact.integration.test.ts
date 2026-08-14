@@ -162,8 +162,8 @@ describe("vector impact analysis", () => {
     // Tiny fixtures can rationally choose an exact scan; eligibility comes from
     // exact prefix predicates plus the matching cosine operator/index definition.
     expect(plan).toMatch(/order: \+distance/);
-    expect(plan).toContain("memory_class = 'policy'");
-    expect(plan).toContain("active");
+    expect(plan).toMatch(/memory_class = 'policy'|spans: .*\/'policy'/);
+    expect(plan).toMatch(/active|memory_versions_active_lookup_idx \(partial index\)/);
     expect(schema).toMatch(/VECTOR INDEX memory_versions_embedding_idx \(tenant_id, namespace_id, memory_class, embedding vector_cosine_ops\)/);
   });
 });
