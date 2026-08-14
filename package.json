@@ -20,6 +20,8 @@
     "infra:build": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 npm_config_cache=/private/tmp/memory-ci-npm-cache sam build --template-file infra/template.yaml",
     "aws:smoke": "tsx scripts/aws-smoke.ts",
     "cloud:evidence": "tsx scripts/cloud-evidence.ts",
+    "demo:seed": "tsx scripts/seed-demo.ts",
+    "demo:reset": "tsx scripts/reset-demo.ts",
     "verify": "npm test && npm run test:integration && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
@@ -37,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260702.1",
     "@eslint/js": "9.39.4",

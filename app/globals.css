@@ -2,8 +2,8 @@
 
 :root {
   --ink: #15171b;
-  --muted: #667085;
-  --faint: #9299a5;
+  --muted: #586170;
+  --faint: #5f6875;
   --line: #e2e4e8;
   --soft-line: #eceef1;
   --paper: #ffffff;
@@ -51,7 +51,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .main-column { grid-column: 2; min-width: 0; }
 .topbar { height: 62px; position: sticky; top: 0; z-index: 20; background: rgba(255,255,255,.9); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); padding: 0 28px; display: flex; align-items: center; justify-content: space-between; }
 .global-search { width: min(400px,42vw); height: 34px; border: 1px solid var(--line); border-radius: 8px; color: var(--faint); display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 11px; background: var(--wash); }
-.global-search kbd { margin-left: auto; border: 1px solid #d7d9dd; background: white; border-radius: 4px; padding: 2px 5px; font-size: 9px; color: #777e8a; }
+.global-search kbd { margin-left: auto; border: 1px solid #d7d9dd; background: white; border-radius: 4px; padding: 2px 5px; font-size: 9px; color: #626b78; }
 .topbar-actions { display: flex; align-items: center; gap: 15px; }
 .status-chip { height: 26px; padding: 0 9px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 13px; font-size: 9px; color: #667085; background: white; }
 .status-chip > span { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
@@ -82,7 +82,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .step-icon.ready { color: var(--green); background: var(--green-soft); }
 .step-icon.blocked,.step-icon.unavailable { color: var(--red); background: var(--red-soft); }
 .step-copy { position: relative; padding-left: 34px; }
-.step-number { position: absolute; left: 0; top: 1px; font-family: var(--font-geist-mono); color: #a4a9b1; font-size: 9px; }
+.step-number { position: absolute; left: 0; top: 1px; font-family: var(--font-geist-mono); color: var(--faint); font-size: 9px; }
 .step-copy h3 { font-size: 12px; margin: 0 0 4px; }
 .step-copy p { color: var(--muted); font-size: 10px; margin: 0 0 5px; }
 .step-copy small { color: var(--faint); font-size: 9px; }
