@@ -16,16 +16,6 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      cockroach:
-        image: cockroachdb/cockroach:v26.2.3
-        ports:
-          - 26257:26257
-        options: >-
-          --health-cmd "curl --fail http://localhost:8080/health?ready=1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
     env:
       TEST_DATABASE_URL: postgresql://root@localhost:26257/defaultdb?sslmode=disable
     steps:
@@ -35,6 +25,15 @@ jobs:
           node-version: 22.13.0
           cache: npm
       - run: npm ci
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name memory-ci-cockroach -p 26257:26257 -p 8080:8080 cockroachdb/cockroach:v26.2.3 start-single-node --insecure
+          for attempt in {1..30}; do
+            curl --fail --silent http://localhost:8080/health?ready=1 && exit 0
+            sleep 2
+          done
+          docker logs memory-ci-cockroach
+          exit 1
       - run: npm test
       - run: npm run test:integration
       - run: npm run lint
