@@ -92,6 +92,8 @@ export const candidateSummarySchema = z.object({
   author: z.object({ id: identifierSchema, name: z.string().min(1).max(255) }).strict(),
   findingCount: z.number().int().nonnegative(),
   blockingFindingCount: z.number().int().nonnegative(),
+  latestEvaluationId: identifierSchema.nullable(),
+  latestApprovedReviewId: identifierSchema.nullable(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 }).strict();

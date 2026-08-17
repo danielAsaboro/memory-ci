@@ -73,12 +73,15 @@ type CandidateRow = {
   state: CandidateSummary["state"]; memory_class: CandidateSummary["memoryClass"]; trust_class: CandidateSummary["trustClass"];
   canonical_text: string; content_digest: string; source_id: string; source_uri: string | null; signature_verified: boolean;
   author_id: string; author_name: string; finding_count: string; blocking_finding_count: string; created_at: Date; updated_at: Date;
+  latest_evaluation_id: string | null; latest_approved_review_id: string | null;
 };
 
 const candidateSelect = `SELECT c.id,c.namespace_id,n.name AS namespace_name,c.lineage_id,c.state,c.memory_class,c.trust_class,
                                  c.canonical_text,c.content_digest,s.id AS source_id,s.source_uri,s.signature_verified,
                                  p.id AS author_id,p.display_name AS author_name,count(f.id) AS finding_count,
                                  count(f.id) FILTER (WHERE f.severity IN ('high','critical')) AS blocking_finding_count,
+                                 (SELECT e.id FROM evaluation_runs e WHERE e.tenant_id=$1 AND e.candidate_id=c.id ORDER BY coalesce(e.completed_at,e.started_at,e.created_at) DESC,e.id DESC LIMIT 1) AS latest_evaluation_id,
+                                 (SELECT r.id FROM reviews r WHERE r.tenant_id=$1 AND r.candidate_id=c.id AND r.decision='approved' ORDER BY r.created_at DESC,r.id DESC LIMIT 1) AS latest_approved_review_id,
                                  c.created_at,c.updated_at
                           FROM memory_candidates c
                           JOIN agent_namespaces n ON n.tenant_id=c.tenant_id AND n.id=c.namespace_id
@@ -91,7 +94,7 @@ const mapCandidate = (row: CandidateRow): CandidateSummary => candidateSummarySc
   state: row.state, memoryClass: row.memory_class, trustClass: row.trust_class, canonicalText: row.canonical_text,
   contentDigest: row.content_digest, source: { id: row.source_id, uri: row.source_uri, signatureVerified: row.signature_verified },
   author: { id: row.author_id, name: row.author_name }, findingCount: asNumber(row.finding_count),
-  blockingFindingCount: asNumber(row.blocking_finding_count), createdAt: asTimestamp(row.created_at), updatedAt: asTimestamp(row.updated_at),
+  blockingFindingCount: asNumber(row.blocking_finding_count), latestEvaluationId: row.latest_evaluation_id, latestApprovedReviewId: row.latest_approved_review_id, createdAt: asTimestamp(row.created_at), updatedAt: asTimestamp(row.updated_at),
 });
 
 async function listCandidateRows(transaction: TenantTransaction, candidateId?: string): Promise<CandidateSummary[]> {

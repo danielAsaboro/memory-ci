@@ -28,7 +28,7 @@ const candidateDetail = {
   id: "11111111-1111-4111-8111-111111111111", namespaceId: "22222222-2222-4222-8222-222222222222", namespaceName: "Payments",
   lineageId: null, state: "review_required", memoryClass: "policy", trustClass: "authoritative", canonicalText: "Refunds require a verified account.",
   contentDigest: "a".repeat(64), source: { id: "33333333-3333-4333-8333-333333333333", uri: "https://source.test/refunds", signatureVerified: true },
-  author: { id: "44444444-4444-4444-8444-444444444444", name: "Northstar Agent" }, findingCount: 1, blockingFindingCount: 0,
+  author: { id: "44444444-4444-4444-8444-444444444444", name: "Northstar Agent" }, findingCount: 1, blockingFindingCount: 0, latestEvaluationId: null, latestApprovedReviewId: null,
   createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T01:00:00.000Z",
 };
 const explanation = {

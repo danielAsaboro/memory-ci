@@ -30,8 +30,8 @@ export class StashApiError extends Error {
   }
 }
 
-export async function stashQuery<T>(path: string, schema: ZodType<T>): Promise<T> {
-  return request(path, { method: "GET", cache: "no-store" }, schema);
+export async function stashQuery<T>(path: string, schema: ZodType<T>, signal?: AbortSignal): Promise<T> {
+  return request(path, signal ? { method: "GET", cache: "no-store", signal } : { method: "GET", cache: "no-store" }, schema);
 }
 
 export async function stashMutation<TInput, TOutput>(
@@ -61,6 +61,7 @@ export const queryKeys = {
   memory: (workspaceId: string, memoryId: string) => ["workspace", workspaceId, "memory", memoryId] as const,
   evaluations: (workspaceId: string) => ["workspace", workspaceId, "evaluations"] as const,
   evaluation: (workspaceId: string, evaluationId: string) => ["workspace", workspaceId, "evaluation", evaluationId] as const,
+  namespaceEvidence: (workspaceId: string, namespaceId: string) => ["workspace", workspaceId, "namespace", namespaceId, "evidence"] as const,
   agents: (workspaceId: string) => ["workspace", workspaceId, "agents"] as const,
   audit: (workspaceId: string) => ["workspace", workspaceId, "audit"] as const,
   status: (workspaceId: string) => ["workspace", workspaceId, "status"] as const,
@@ -71,8 +72,8 @@ export const getCandidates = (): Promise<CandidateSummary[]> => stashQuery("/v1/
 export const getCandidate = (id: string): Promise<CandidateSummary> => stashQuery(`/v1/candidates/${id}`, candidateSummarySchema);
 export const getMemories = (): Promise<MemorySummary[]> => stashQuery("/v1/memory", memorySummarySchema.array());
 export const getMemory = (id: string): Promise<MemoryDetail> => stashQuery(`/v1/memory/${id}`, memoryDetailSchema);
-export const getEvaluations = (): Promise<EvaluationSummary[]> => stashQuery("/v1/evaluations", evaluationSummarySchema.array());
-export const getEvaluation = (id: string): Promise<EvaluationDetail> => stashQuery(`/v1/evaluations/${id}`, evaluationDetailSchema);
+export const getEvaluations = (signal?: AbortSignal): Promise<EvaluationSummary[]> => stashQuery("/v1/evaluations", evaluationSummarySchema.array(), signal);
+export const getEvaluation = (id: string, signal?: AbortSignal): Promise<EvaluationDetail> => stashQuery(`/v1/evaluations/${id}`, evaluationDetailSchema, signal);
 export const getAgents = (): Promise<Agent[]> => stashQuery("/v1/agents", agentSchema.array());
 export const getAuditEvents = (): Promise<AuditEvent[]> => stashQuery("/v1/audit", auditEventSchema.array());
 export const getWorkspaceStatus = (): Promise<WorkspaceStatus> => stashQuery("/v1/workspace/status", workspaceStatusSchema);

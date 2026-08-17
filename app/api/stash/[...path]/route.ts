@@ -26,7 +26,7 @@ const candidateDetailProviderSchema = z.object({
   state: candidateStateSchema, memoryClass: memoryClassSchema, trustClass: trustClassSchema, canonicalText: z.string().max(50_000),
   contentDigest: z.string().min(1).max(128), source: z.object({ id: identifierSchema, uri: z.string().max(2_000).nullable(), signatureVerified: z.boolean() }).strict(),
   author: z.object({ id: identifierSchema, name: z.string().min(1).max(255) }).strict(), findingCount: z.number().int().nonnegative(),
-  blockingFindingCount: z.number().int().nonnegative(), createdAt: timestampSchema, updatedAt: timestampSchema,
+  blockingFindingCount: z.number().int().nonnegative(), latestEvaluationId: identifierSchema.nullable(), latestApprovedReviewId: identifierSchema.nullable(), createdAt: timestampSchema, updatedAt: timestampSchema,
 }).strict();
 const internalMemorySchema = z.object({
   id: identifierSchema, tenantId: identifierSchema, namespaceId: identifierSchema, lineageId: identifierSchema,
@@ -97,7 +97,7 @@ const projectCandidateDetail = (value: unknown) => {
     id: candidate.id, namespaceId: candidate.namespaceId, namespaceName: candidate.namespaceName, lineageId: candidate.lineageId,
     state: candidate.state, memoryClass: candidate.memoryClass, trustClass: candidate.trustClass, canonicalText: candidate.canonicalText,
     contentDigest: candidate.contentDigest, source: candidate.source, author: candidate.author, findingCount: candidate.findingCount,
-    blockingFindingCount: candidate.blockingFindingCount, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt,
+    blockingFindingCount: candidate.blockingFindingCount, latestEvaluationId: candidate.latestEvaluationId, latestApprovedReviewId: candidate.latestApprovedReviewId, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt,
   };
 };
 const projectMemorySearch = (value: unknown) => {

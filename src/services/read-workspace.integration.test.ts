@@ -125,7 +125,7 @@ describe("workspace read models", () => {
     expect(evaluation).toMatchObject({ id: firstEvidence.evaluationId, results: [expect.objectContaining({ status: "passed" })] });
     expect(candidates).toEqual(expect.arrayContaining([expect.objectContaining({ id: firstEvidence.candidateId, state: "review_required" })]));
     expect(candidates).toHaveLength(2);
-    expect(candidate).toMatchObject({ id: firstEvidence.candidateId, canonicalText: "Review refunds over $200." });
+    expect(candidate).toMatchObject({ id: firstEvidence.candidateId, canonicalText: "Review refunds over $200.", latestEvaluationId: firstEvidence.evaluationId, latestApprovedReviewId: null });
     expect(audit).toEqual([expect.objectContaining({ action: "workspace.created", actor: expect.objectContaining({ id: first.principalId }) })]);
     expect(workspace).toMatchObject({ workspace: { id: first.tenantId, name: "First workspace" } });
     expect(workspace.integrations.cockroach.state).toBe("ready");
