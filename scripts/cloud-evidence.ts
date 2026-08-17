@@ -1,15 +1,12 @@
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { atomicWriteJson, redactEvidence, receiptSchema, safeErrorMessage, validateCorrelatedReceipts } from "./evidence-contract";
+
 const exec = promisify(execFile);
-const sensitiveKey = /(?:authorization|credential|database.?url|password|secret|token|private.?key)/i;
-const sensitiveQueryKey = /(?:access.?key|authorization|credential|key|password|secret|signature|token)/i;
-const accountId = /\b\d{12}\b/g;
-const email = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-const bearer = /\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi;
-const jwt = /\beyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2}\b/g;
+export { redactEvidence } from "./evidence-contract";
 
 type Workspace = Readonly<{ tenantId: string; principalId: string; workspaceName: string }>;
 type SmokeReceipt = Readonly<{
@@ -27,29 +24,7 @@ export type ProductionEvidenceInput = Readonly<{
   smoke: SmokeReceipt; vector: VectorReceipt; cloudWatch: { eventId: string | null }; xray: { traceId: string | null };
 }>;
 
-/** Removes credentials and personally identifying cloud identity values before a receipt is persisted or printed. */
-export function redactEvidence(value: unknown, key = ""): unknown {
-  if (sensitiveKey.test(key)) return "[redacted]";
-  if (typeof value === "string") return redactString(value);
-  if (Array.isArray(value)) return value.map((item) => redactEvidence(item));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactEvidence(item, name)]));
-  return value;
-}
-
-function redactString(value: string): string {
-  let redacted = redactUrl(value);
-  redacted = redacted.replace(accountId, "[redacted-account]").replace(email, "[redacted-email]");
-  redacted = redacted.replace(bearer, "[redacted-authorization]").replace(jwt, "[redacted]");
-  return redacted;
-}
-
-function redactUrl(value: string): string {
-  let url: URL;
-  try { url = new URL(value); } catch { return value; }
-  if (url.username || url.password) { url.username = "redacted"; url.password = "redacted"; }
-  for (const key of [...url.searchParams.keys()]) if (sensitiveQueryKey.test(key)) url.searchParams.set(key, "[redacted]");
-  return url.toString();
-}
+const sensitiveQueryKey = /(?:access.?key|authorization|credential|key|password|secret|signature|token)/i;
 
 export function assertProductionApiBaseUrl(value: string): string {
   let url: URL;
@@ -90,13 +65,12 @@ async function awsJson(args: readonly string[], region: string): Promise<Record<
 async function readReceipt(path: string, label: string): Promise<Record<string, unknown>> {
   let parsed: unknown;
   try { parsed = JSON.parse(await readFile(path, "utf8")); } catch { throw new Error(`${label} receipt is unreadable: ${path}`); }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} receipt must be a JSON object.`);
-  return parsed as Record<string, unknown>;
+  try { return receiptSchema.parse(parsed); } catch { throw new Error(`${label} receipt is invalid or incomplete.`); }
 }
 
-export function extractCloudWatchEventId(value: unknown): string | null {
+export function extractCloudWatchEventId(value: unknown, requiredRequestId?: string): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
-  const event = (value as { events: unknown[] }).events.find((item) => item && typeof item === "object" && typeof (item as { eventId?: unknown }).eventId === "string") as { eventId: string } | undefined;
+  const event = (value as { events: unknown[] }).events.find((item) => item && typeof item === "object" && typeof (item as { eventId?: unknown }).eventId === "string" && (!requiredRequestId || typeof (item as { message?: unknown }).message === "string" && (item as { message: string }).message.includes(requiredRequestId))) as { eventId: string } | undefined;
   return event?.eventId ?? null;
 }
 
@@ -110,25 +84,30 @@ async function main(): Promise<void> {
   const output = process.argv[2];
   const smokePath = process.env.STASH_SMOKE_EVIDENCE_FILE;
   const vectorPath = process.env.STASH_VECTOR_EVIDENCE_FILE;
+  const ccloudPath = process.env.STASH_CCLOUD_EVIDENCE_FILE;
   const region = process.env.AWS_REGION ?? "us-east-1";
   const stackName = process.env.STASH_STACK_NAME ?? "stash-production";
   if (!output) throw new Error("Usage: npm run cloud:evidence -- <output.json>");
-  if (!smokePath || !vectorPath) throw new Error("STASH_SMOKE_EVIDENCE_FILE and STASH_VECTOR_EVIDENCE_FILE are required; cloud evidence never substitutes local fixtures.");
-  const [smoke, vector, identity, stack] = await Promise.all([readReceipt(smokePath, "AWS smoke"), readReceipt(vectorPath, "Vector"), awsJson(["sts", "get-caller-identity"], region), awsJson(["cloudformation", "describe-stacks", "--stack-name", stackName], region)]);
+  if (!smokePath || !vectorPath || !ccloudPath) throw new Error("Smoke, vector, and ccloud receipts are required; cloud evidence never substitutes local fixtures.");
+  const [smoke, vector, ccloud, identity, stack] = await Promise.all([readReceipt(smokePath, "AWS smoke"), readReceipt(vectorPath, "Vector"), readReceipt(ccloudPath, "ccloud"), awsJson(["sts", "get-caller-identity"], region), awsJson(["cloudformation", "describe-stacks", "--stack-name", stackName], region)]);
+  const correlated = validateCorrelatedReceipts({ smoke, vector, ccloud });
   const stackRow = Array.isArray(stack.Stacks) ? stack.Stacks[0] as Record<string, unknown> | undefined : undefined;
   const status = typeof stackRow?.StackStatus === "string" ? stackRow.StackStatus : "";
   if (status !== "CREATE_COMPLETE" && status !== "UPDATE_COMPLETE") throw new Error(`Stack ${stackName} is not complete.`);
-  const startTime = new Date(Date.now() - 15 * 60_000).toISOString();
+  const startTime = correlated.smoke.generatedAt;
   const [logs, traces] = await Promise.all([
-    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/lambda/stash-api", "--start-time", String(Date.parse(startTime)), "--max-items", "20"], region),
+    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/lambda/stash-api", "--start-time", String(Date.parse(startTime)), "--filter-pattern", correlated.smoke.requestIds.api, "--max-items", "20"], region),
     awsJson(["xray", "get-trace-summaries", "--start-time", startTime, "--end-time", new Date().toISOString()], region),
   ]);
-  const input: ProductionEvidenceInput = { smoke: smoke as unknown as SmokeReceipt, vector: vector as unknown as VectorReceipt, cloudWatch: { eventId: extractCloudWatchEventId(logs) }, xray: { traceId: extractXrayTraceId(traces) } };
-  validateProductionEvidence(input);
-  const evidence = redactEvidence({ schemaVersion: "1", verified: true, capturedAt: new Date().toISOString(), region, stack: { name: stackName, status }, awsIdentity: { account: identity.Account, arn: identity.Arn, providerRequestId: identity.ResponseMetadata }, smoke, vector, cloudWatch: input.cloudWatch, xray: input.xray });
-  await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`, { flag: "wx" });
+  if (identity.Account !== correlated.smoke.aws.accountId) throw new Error("STS account does not match correlated production receipts.");
+  const cloudWatch = { eventId: extractCloudWatchEventId(logs, correlated.smoke.requestIds.api) };
+  const xray = { traceId: extractXrayTraceId(traces) };
+  if (!cloudWatch.eventId) throw new Error("CloudWatch result does not contain the exact smoke request ID.");
+  if (!xray.traceId || xray.traceId !== correlated.smoke.requestIds.trace) throw new Error("X-Ray result does not contain the exact smoke trace ID.");
+  const evidence = redactEvidence({ schemaVersion: 2, verified: true, generatedAt: new Date().toISOString(), region, stack: { name: stackName, status }, awsIdentity: { account: identity.Account, arn: identity.Arn }, smoke, vector, ccloud, cloudWatch, xray });
+  await atomicWriteJson(output, evidence);
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 }
 
 const invokedAsScript = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
-if (invokedAsScript) main().catch((error) => { process.stderr.write(`${redactEvidence(error instanceof Error ? error.message : "Cloud evidence failed.")}\n`); process.exitCode = 1; });
+if (invokedAsScript) main().catch((error) => { process.stderr.write(`${safeErrorMessage(error)}\n`); process.exitCode = 1; });

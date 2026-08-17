@@ -1,3 +1,4 @@
+import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -8,6 +9,9 @@ export const productionParameterNames = [
 ] as const;
 
 export type ProductionParameters = Record<(typeof productionParameterNames)[number], string>;
+
+const secretArn = /^arn:aws:secretsmanager:us-east-1:(\d{12}):secret:stash\/[A-Za-z0-9/_+=.@-]+$/;
+const placeholder = /(?:replace|example|placeholder|000000000000|localhost|127\.0\.0\.1)/i;
 
 export function assertTemplateParameterNames(templateNames: readonly string[]): void {
   const expected = new Set(productionParameterNames);
@@ -24,8 +28,25 @@ export function validateProductionParameters(value: unknown): ProductionParamete
   const unknown = Object.keys(record).filter((name) => !productionParameterNames.includes(name as (typeof productionParameterNames)[number]));
   if (missing.length || unknown.length) throw new Error(`Invalid production parameters: missing ${missing.join(", ") || "none"}; unknown ${unknown.join(", ") || "none"}.`);
   if (record.AllowedOrigin !== "https://trystash.xyz") throw new Error("AllowedOrigin must be https://trystash.xyz.");
-  for (const name of ["StashSessionSecret", "StashBootstrapKey"] as const) if ((record[name] as string).length < 32) throw new Error(`${name} must contain at least 32 bytes.`);
+  if (!secretArn.test(record.DatabaseSecretArn as string) || placeholder.test(record.DatabaseSecretArn as string)) throw new Error("DatabaseSecretArn must be a non-placeholder us-east-1 Stash Secrets Manager ARN.");
+  if (record.BedrockModelId !== "anthropic.claude-3-5-sonnet-20241022-v2:0" || record.BedrockEmbeddingModelId !== "amazon.titan-embed-text-v2:0") throw new Error("Bedrock model IDs are not approved for this production template.");
+  for (const name of ["StashSessionSecret", "StashBootstrapKey"] as const) {
+    const secret = record[name] as string;
+    if (secret.length < 32 || placeholder.test(secret)) throw new Error(`${name} must contain a non-placeholder value of at least 32 bytes.`);
+  }
+  let keys: unknown;
+  try { keys = JSON.parse(record.StashTrustedSourceKeys as string); } catch { throw new Error("StashTrustedSourceKeys must be valid JSON."); }
+  if (!Array.isArray(keys) || keys.length === 0) throw new Error("StashTrustedSourceKeys must include at least one trusted Ed25519 public key.");
+  for (const key of keys) {
+    if (!key || typeof key !== "object" || typeof (key as Record<string, unknown>).identity !== "string" || typeof (key as Record<string, unknown>).keyId !== "string" || typeof (key as Record<string, unknown>).publicKey !== "string") throw new Error("StashTrustedSourceKeys entry is invalid.");
+    try { createPublicKey({ key: Buffer.from((key as Record<string, string>).publicKey, "base64"), format: "der", type: "spki" }); } catch { throw new Error("StashTrustedSourceKeys contains an invalid public key."); }
+  }
   return Object.fromEntries(productionParameterNames.map((name) => [name, record[name]])) as ProductionParameters;
+}
+
+export function buildSamDeployArgs(parameterFile: string): string[] {
+  if (!parameterFile || parameterFile.includes("\0")) throw new Error("Production parameter file path is invalid.");
+  return ["deploy", "--template-file", ".aws-sam/build/template.yaml", "--stack-name", "stash-production", "--region", "us-east-1", "--capabilities", "CAPABILITY_IAM", "--resolve-s3", "--no-confirm-changeset", "--parameter-overrides", `file://${parameterFile}`];
 }
 
 export async function readProductionParameters(path: string): Promise<ProductionParameters> {

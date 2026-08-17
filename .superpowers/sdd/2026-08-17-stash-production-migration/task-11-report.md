@@ -27,6 +27,14 @@
 - `aws sts get-caller-identity` has no credentials.
 - The browser is paused at the final persistent CockroachDB GitHub OAuth authorization. Do not approve it without an explicit, current user action-time confirmation.
 
+## Fix Round 1
+
+- Added schema-version-2 evidence contexts and receipt correlation checks for run ID, freshness, AWS account/region/stack/API/bucket/event bus/models, and Cockroach cluster/org/region/tier/host. Final evidence rejects mixed contexts, stale receipts, local/fixture clusters, unrelated CloudWatch request IDs, and unrelated X-Ray trace IDs.
+- Switched evidence outputs to atomic temporary-file rename and centralized recursive error/URL/token redaction. `ccloud` now parses structured JSON and rejects non-AWS, non-`us-east-1`, inactive, fixture, and non-Cloud clusters.
+- Hardened production migrations with Cloud-host/TLS preflight and dynamic migration-ledger equality checks. Added managed embedding invocation and 1024-dimension validation to AWS smoke. Vector evidence now rejects private targets, verifies SQL cluster identity, visible embedding columns, VECTOR(1024), vector-index DDL, and the chosen index in `EXPLAIN`.
+- Production parameters now reject placeholders, invalid Secret ARNs, unsupported models, and empty/invalid trusted-key registries; the deploy wrapper validates first and sends only `file://<parameter-file>` to SAM. Added required X-Ray write actions to each custom Lambda role.
+- Verification: `npm run verify` passed (249 unit tests/40 files; 30 integration tests/6 files; lint, typecheck, build). SAM validation/build and production audit passed. The intentionally placeholder-only `infra/parameters.example.json` now fails `production:parameters`, as required, before deployment.
+
 ## Minimal post-auth sequence
 
 1. Authenticate, with the browser authorization action confirmed by the user, then verify identities:

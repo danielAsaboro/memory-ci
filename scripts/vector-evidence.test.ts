@@ -12,4 +12,9 @@ describe("production vector evidence configuration", () => {
   it("requires an explicit Cloud cluster ID before labeling evidence production", () => {
     expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", DATABASE_URL: "postgresql://user@host.cockroachlabs.cloud:26257/stash?sslmode=verify-full" })).toThrow(/COCKROACH_CLUSTER_ID/);
   });
+
+  it("rejects private-network and non-Cockroach Cloud database hosts", () => {
+    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cluster-1", DATABASE_URL: "postgresql://user@10.0.0.5:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
+    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cluster-1", DATABASE_URL: "postgresql://user@db.example.test:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
+  });
 });

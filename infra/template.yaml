@@ -124,6 +124,9 @@ Resources:
                 Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
                 Resource: { Fn::Sub: "${ApiLogGroup.Arn}:*" }
               - Effect: Allow
+                Action: ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+                Resource: "*"
+              - Effect: Allow
                 Action: ["secretsmanager:GetSecretValue"]
                 Resource: { Ref: DatabaseSecretArn }
               - Effect: Allow
@@ -148,6 +151,9 @@ Resources:
               - Effect: Allow
                 Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
                 Resource: { Fn::Sub: "${OutboxLogGroup.Arn}:*" }
+              - Effect: Allow
+                Action: ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+                Resource: "*"
               - Effect: Allow
                 Action: ["secretsmanager:GetSecretValue"]
                 Resource: { Ref: DatabaseSecretArn }
@@ -177,6 +183,9 @@ Resources:
               - Effect: Allow
                 Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
                 Resource: { Fn::Sub: "${SandboxLogGroup.Arn}:*" }
+              - Effect: Allow
+                Action: ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+                Resource: "*"
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:

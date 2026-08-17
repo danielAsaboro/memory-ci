@@ -62,5 +62,8 @@ describe("AWS SAM template", () => {
     const apiPolicies = template.Resources.ApiRole?.Properties?.Policies as Array<{ PolicyDocument?: { Statement?: Array<{ Action?: string[] }> } }> | undefined;
     const apiActions = apiPolicies?.flatMap((policy) => policy.PolicyDocument?.Statement?.flatMap((statement) => statement.Action ?? []) ?? []) ?? [];
     expect(apiActions).not.toEqual(expect.arrayContaining(["s3:PutObject", "events:PutEvents"]));
+    const source = await readFile(templatePath, "utf8");
+    expect((source.match(/xray:PutTraceSegments/g) ?? []).length).toBe(3);
+    expect((source.match(/xray:PutTelemetryRecords/g) ?? []).length).toBe(3);
   });
 });
