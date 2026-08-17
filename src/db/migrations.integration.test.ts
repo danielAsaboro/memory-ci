@@ -146,13 +146,39 @@ describe("CockroachDB migrations", () => {
         "SELECT tenant_id,workspace_name FROM workspace_bootstraps WHERE tenant_id=$1 AND idempotency_key='upgrade-bootstrap-key'",
         [tenantId],
       );
+      const secondTenantId = randomUUID();
+      const secondPrincipalId = randomUUID();
+      const secondNamespaceId = randomUUID();
+      const secondAgentId = randomUUID();
+      await upgrade.query("INSERT INTO tenants (id,slug,name) VALUES ($1,$2,'Second Upgrade Workspace')", [secondTenantId, `upgrade-${secondTenantId}`]);
+      await upgrade.query(
+        `INSERT INTO principals (tenant_id,id,kind,display_name) VALUES
+         ($1,$2,'human','Second owner'),($1,$3,'agent','Second agent')`,
+        [secondTenantId, secondPrincipalId, secondAgentId],
+      );
+      await upgrade.query(
+        "INSERT INTO agent_namespaces (tenant_id,id,slug,name) VALUES ($1,$2,'refunds','Refund policy')",
+        [secondTenantId, secondNamespaceId],
+      );
+      await upgrade.query(
+        `INSERT INTO workspace_bootstraps
+         (idempotency_key,tenant_id,principal_id,namespace_id,agent_id,workspace_name)
+         VALUES ('upgrade-bootstrap-key',$1,$2,$3,$4,'Second Upgrade Workspace')`,
+        [secondTenantId, secondPrincipalId, secondNamespaceId, secondAgentId],
+      );
       const primaryKey = await upgrade.query<{ column_name: string }>(
         `SELECT column_name FROM [SHOW INDEX FROM workspace_bootstraps]
          WHERE index_name='workspace_bootstraps_pkey' AND storing=false ORDER BY seq_in_index`,
       );
+      const legacyGlobalUniqueIndex = await upgrade.query<{ index_name: string }>(
+        `SELECT index_name FROM [SHOW INDEX FROM workspace_bootstraps]
+         WHERE index_name='workspace_bootstraps_idempotency_key_key'
+           AND non_unique=false AND column_name='idempotency_key' AND seq_in_index=1 AND storing=false`,
+      );
 
       expect(persisted.rows).toEqual([{ tenant_id: tenantId, workspace_name: "Upgrade Workspace" }]);
       expect(primaryKey.rows.map((row) => row.column_name)).toEqual(["tenant_id", "idempotency_key"]);
+      expect(legacyGlobalUniqueIndex.rows).toEqual([]);
     } finally {
       await upgrade.end().catch(() => undefined);
       await admin.query(`DROP DATABASE ${upgradeDatabaseName} CASCADE`);
