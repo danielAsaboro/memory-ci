@@ -72,9 +72,11 @@ function evidenceBedrockClient(region: string, runId: string): BedrockRuntimeCli
 }
 
 async function assertBedrockInvocationLogging(): Promise<void> {
+  const expectedRoleArn = process.env.STASH_BEDROCK_LOGGING_ROLE_ARN;
+  if (!expectedRoleArn) throw new Error("STASH_BEDROCK_LOGGING_ROLE_ARN is required for Bedrock logging verification.");
   const { stdout } = await exec("aws", ["bedrock", "get-model-invocation-logging-configuration", "--region", "us-east-1", "--output", "json"], { timeout: 30_000, maxBuffer: 100_000 });
-  const value: unknown = JSON.parse(stdout); const logging = value && typeof value === "object" ? (value as { loggingConfig?: { cloudWatchConfig?: { logGroupName?: unknown }; textDataDeliveryEnabled?: unknown; embeddingDataDeliveryEnabled?: unknown } }).loggingConfig : undefined;
-  if (logging?.cloudWatchConfig?.logGroupName !== "/aws/bedrock/stash-production-invocations" || logging.textDataDeliveryEnabled !== true || logging.embeddingDataDeliveryEnabled !== true) throw new Error("Stack-owned Bedrock invocation logging is not configured.");
+  const value: unknown = JSON.parse(stdout); const logging = value && typeof value === "object" ? (value as { loggingConfig?: { cloudWatchConfig?: { logGroupName?: unknown; roleArn?: unknown }; textDataDeliveryEnabled?: unknown; embeddingDataDeliveryEnabled?: unknown } }).loggingConfig : undefined;
+  if (logging?.cloudWatchConfig?.logGroupName !== "/aws/bedrock/stash-production-invocations" || logging.cloudWatchConfig.roleArn !== expectedRoleArn || logging.textDataDeliveryEnabled !== true || logging.embeddingDataDeliveryEnabled !== true) throw new Error("Stack-owned Bedrock invocation logging is not configured.");
 }
 
 async function main(): Promise<void> {

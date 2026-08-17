@@ -104,14 +104,15 @@ export function extractObservedTraceId(value: unknown, traceId: string, startedA
   return trace ? traceId : null;
 }
 
-export function hasObservedBedrockInvocation(value: unknown, smoke: { aws: { accountId: string; region: string }; runId: string; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string } } }): boolean {
+export function hasObservedBedrockInvocation(value: unknown, smoke: { aws: { accountId: string; region: string }; runId: string; startedAt: string; generatedAt: string; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string } } }): boolean {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return false;
   const required = [smoke.bedrock.evaluator, smoke.bedrock.embedding];
   return required.every((expected) => (value as { events: unknown[] }).events.some((event) => {
     try {
-      const record: unknown = JSON.parse((event as { message: string }).message); const item = record as { schemaType?: unknown; schemaVersion?: unknown; accountId?: unknown; region?: unknown; operation?: unknown; modelId?: unknown; requestId?: unknown; requestMetadata?: unknown };
+      const record: unknown = JSON.parse((event as { message: string }).message); const item = record as { schemaType?: unknown; schemaVersion?: unknown; timestamp?: unknown; accountId?: unknown; region?: unknown; operation?: unknown; modelId?: unknown; requestId?: unknown; requestMetadata?: unknown };
       const metadata = item.requestMetadata as Record<string, unknown> | undefined;
-      return item.schemaType === "ModelInvocationLog" && item.schemaVersion === "1.0" && item.accountId === smoke.aws.accountId && item.region === smoke.aws.region && item.operation === "InvokeModel" && item.modelId === expected.modelId && item.requestId === expected.providerRequestId && metadata?.runId === smoke.runId && metadata?.purpose === "stash-production-smoke";
+      const timestamp = typeof item.timestamp === "string" ? Date.parse(item.timestamp) : NaN;
+      return (event as { logStreamName?: unknown }).logStreamName === "aws/bedrock/modelinvocations" && item.schemaType === "ModelInvocationLog" && item.schemaVersion === "1.0" && Number.isFinite(timestamp) && timestamp >= Date.parse(smoke.startedAt) && timestamp <= Date.parse(smoke.generatedAt) + 120_000 && item.accountId === smoke.aws.accountId && item.region === smoke.aws.region && item.operation === "InvokeModel" && item.modelId === expected.modelId && item.requestId === expected.providerRequestId && metadata?.runId === smoke.runId && metadata?.purpose === "stash-production-smoke";
     } catch { return false; }
   }));
 }
