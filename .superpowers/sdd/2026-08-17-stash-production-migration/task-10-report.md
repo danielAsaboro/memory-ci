@@ -86,3 +86,4 @@ The only deterministic double is the Bedrock semantic-judge adapter boundary in 
 
 - RED/GREEN: `npm run test -- --run src/services/source-signature.test.ts src/services/ingest-candidate.test.ts` — 12 passed, including delimiter collision and identity replay rejection.
 - `npm run test:integration -- --run src/db/migrations.integration.test.ts` — 10 passed with the full migration manifest.
+- Dedicated persistence regression: `npm run test:integration -- --run src/db/repositories.integration.test.ts` — 8 passed. It creates a trusted historical source/candidate, accepts exact same-tenant evidence reuse, rejects changed signed content, preserves/re-verifies the original evidence and historical candidate, and proves same source UUID independence in a second tenant.

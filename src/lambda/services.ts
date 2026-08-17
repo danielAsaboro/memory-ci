@@ -38,7 +38,7 @@ function immutableSourceEvidence(source: Record<string, unknown>) {
     signatureKeyFingerprint: source.signatureKeyFingerprint, signaturePublicKey: source.signaturePublicKey,
     signatureRegistryVersion: source.signatureRegistryVersion, signatureAlgorithm: source.signatureAlgorithm,
     signature: source.signature, canonicalSignedPayload: source.canonicalSignedPayload,
-    signaturePayloadVersion: source.signaturePayloadVersion, signatureVerified: source.signatureVerified,
+    signaturePayloadVersion: source.signaturePayloadVersion === null || source.signaturePayloadVersion === undefined ? null : Number(source.signaturePayloadVersion), signatureVerified: source.signatureVerified,
     validUntil: source.validUntil ? new Date(source.validUntil as Date).toISOString() : null });
 }
 

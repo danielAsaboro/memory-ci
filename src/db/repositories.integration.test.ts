@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -15,6 +15,7 @@ import { ReviewRepository } from "./reviews";
 import { createApiServices } from "../lambda/services";
 import { dispatchOutboxEvents } from "../lambda/outbox";
 import type { EventBridgeTransport } from "../aws/eventbridge";
+import { canonicalSourceSignaturePayload, verifyPersistedSourceSignature } from "../services/source-signature";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ??
   "postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable";
@@ -133,6 +134,36 @@ describe("tenant-bound repositories", () => {
     expect(hidden).toBeNull();
     expect(transitioned.state).toBe("screening");
     expect(transitioned.canonicalPayload).toEqual({ refundReviewThreshold: 150 });
+  });
+
+  it("keeps source evidence immutable while permitting exact tenant-local reuse", async () => {
+    const first = await seed(`immutable-first-${randomUUID()}`); const second = await seed(`immutable-second-${randomUUID()}`);
+    const sourceId = randomUUID(); const keys = generateKeyPairSync("ed25519");
+    const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const priorKeys = process.env.STASH_TRUSTED_SOURCE_KEYS;
+    process.env.STASH_TRUSTED_SOURCE_KEYS = JSON.stringify([{ identity: "immutable-owner", keyId: "v1", publicKey }]);
+    try {
+      const services = createApiServices(pool);
+      const sourceContent = "Immutable signed evidence for refund policy.";
+      const signed = sign(null, Buffer.from(canonicalSourceSignaturePayload({ content: sourceContent, signatureIdentity: "immutable-owner", signatureKeyId: "v1" })), keys.privateKey).toString("base64");
+      const makeInput = (namespaceId: string, canonicalText: string, content = sourceContent, signature = signed) => ({
+        namespaceId, memoryClass: "policy", trustClass: "authoritative", canonicalText, payload: { canonicalText }, idempotencyKey: randomUUID(),
+        source: { id: sourceId, sourceType: "operator", content, contentDigest: createHash("sha256").update(content).digest("hex"), signatureIdentity: "immutable-owner", signatureKeyId: "v1", signatureAlgorithm: "ed25519" as const, signature },
+      });
+      const firstContext = { tenantId: first.tenantId, principalId: first.principalId, requestId: randomUUID(), roles: ["admin"] };
+      const secondContext = { tenantId: second.tenantId, principalId: second.principalId, requestId: randomUUID(), roles: ["admin"] };
+      const historical = await services.createCandidate(firstContext, makeInput(first.namespaceId, "First immutable candidate"));
+      await expect(services.createCandidate(firstContext, makeInput(first.namespaceId, "Exact evidence reuse candidate"))).resolves.toMatchObject({ state: "proposed" });
+      const changed = "Attacker replacement evidence";
+      const changedSignature = sign(null, Buffer.from(canonicalSourceSignaturePayload({ content: changed, signatureIdentity: "immutable-owner", signatureKeyId: "v1" })), keys.privateKey).toString("base64");
+      await expect(services.createCandidate(firstContext, makeInput(first.namespaceId, "Malicious overwrite", changed, changedSignature))).rejects.toMatchObject({ code: "conflict" });
+      await expect(services.createCandidate(secondContext, makeInput(second.namespaceId, "Independent tenant candidate"))).resolves.toMatchObject({ state: "proposed" });
+      const source = await pool.query<{ canonical_signed_payload: string; signature: string; signature_algorithm: string; signature_public_key: string; content_digest: string }>("SELECT canonical_signed_payload,signature,signature_algorithm,signature_public_key,content_digest FROM sources WHERE tenant_id=$1 AND id=$2", [first.tenantId, sourceId]);
+      expect(source.rows).toHaveLength(1);
+      expect(source.rows[0]?.content_digest).toBe(createHash("sha256").update(sourceContent).digest("hex"));
+      expect(verifyPersistedSourceSignature({ canonicalPayload: source.rows[0]!.canonical_signed_payload, signature: source.rows[0]!.signature, signatureAlgorithm: source.rows[0]!.signature_algorithm, publicKey: source.rows[0]!.signature_public_key })).toBe(true);
+      await expect(withTenantTransaction(pool, first.tenantId, (transaction) => new CandidateRepository(transaction).get((historical as { id: string }).id))).resolves.toMatchObject({ id: (historical as { id: string }).id });
+    } finally { if (priorKeys === undefined) delete process.env.STASH_TRUSTED_SOURCE_KEYS; else process.env.STASH_TRUSTED_SOURCE_KEYS = priorKeys; }
   });
 
   it("deduplicates concurrent evaluation requests with different lifecycle keys", async () => {
