@@ -106,6 +106,30 @@ Resources:
   MemoryEventBus:
     Type: AWS::Events::EventBus
     Properties: { Name: stash }
+  EvidenceObservationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: { LogGroupName: /aws/events/stash-production-observations, RetentionInDays: 30 }
+  EvidenceObservationLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: stash-production-evidence-observations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
+            Resource: { Fn::GetAtt: [EvidenceObservationLogGroup, Arn] }
+  EvidenceObservationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: { Ref: MemoryEventBus }
+      EventPattern: { detail-type: ["stash.cloud_smoke"] }
+      Targets:
+        - Id: stash-production-observations
+          Arn: { Fn::GetAtt: [EvidenceObservationLogGroup, Arn] }
   ApiRole:
     Type: AWS::IAM::Role
     Properties:

@@ -18,21 +18,30 @@ export function assertMigrationLedger(expected: readonly string[], applied: read
   if (expected.length === 0 || expected.length !== applied.length || expected.some((name, index) => name !== applied[index])) throw new Error("Migration ledger does not contain the exact expected migration set.");
 }
 
+export async function assertSqlClusterIdentity(client: { query(sql: string): Promise<{ rows: { cluster_id: string }[] }> }, clusterId: string): Promise<void> {
+  const identity = await client.query("SELECT crdb_internal.cluster_id() AS cluster_id");
+  if (identity.rows[0]?.cluster_id !== clusterId) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   const clusterId = process.env.COCKROACH_CLUSTER_ID;
   if (!databaseUrl || !clusterId) throw new Error("DATABASE_URL and COCKROACH_CLUSTER_ID are required; migrations refuse a local default for production use.");
   assertCloudDatabaseUrl(databaseUrl);
   const expected = (await readdir(path.join(process.cwd(), "db/migrations"))).filter((file) => file.endsWith(".sql")).sort((left, right) => left.localeCompare(right));
-  await migrate(databaseUrl);
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-production-migration-ledger" });
   await client.connect();
   try {
-    const identity = await client.query<{ cluster_id: string }>("SELECT crdb_internal.cluster_id() AS cluster_id");
-    if (identity.rows[0]?.cluster_id !== clusterId) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
-    const applied = await client.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
-    assertMigrationLedger(expected, applied.rows.map((row) => row.name));
+    await assertSqlClusterIdentity(client, clusterId);
   } finally { await client.end(); }
+  await migrate(databaseUrl);
+  const ledger = new Client({ connectionString: databaseUrl, application_name: "stash-production-migration-ledger" });
+  await ledger.connect();
+  try {
+    await assertSqlClusterIdentity(ledger, clusterId);
+    const applied = await ledger.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
+    assertMigrationLedger(expected, applied.rows.map((row) => row.name));
+  } finally { await ledger.end(); }
   process.stdout.write(`Applied and verified ${expected.length} migrations.\n`);
 }
 

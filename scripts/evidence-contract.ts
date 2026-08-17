@@ -33,9 +33,9 @@ export const evidenceContextSchema = evidenceContextBaseSchema.strict();
 const smokeReceiptSchema = evidenceContextBaseSchema.extend({
   kind: z.literal("aws-smoke"), startedAt: z.string().datetime(), requestIds: z.object({ api: z.string().min(1), trace: z.string().min(1) }).strict(),
   health: z.object({ status: z.literal("ok"), requestId: z.string().min(1) }).strict(),
-  workspace: z.object({ first: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1) }).strict(), retry: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1) }).strict() }).strict(),
+  workspace: z.object({ first: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1), roles: z.array(z.string().min(1)).min(1) }).strict(), retry: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1), roles: z.array(z.string().min(1)).min(1) }).strict() }).strict(),
   bedrock: z.object({ evaluator: z.object({ modelId: z.literal("anthropic.claude-3-5-sonnet-20241022-v2:0"), providerRequestId: z.string().min(1) }).strict(), embedding: z.object({ modelId: z.literal("amazon.titan-embed-text-v2:0"), providerRequestId: z.string().min(1), dimensions: z.literal(1024), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict() }).strict(),
-  s3: z.object({ providerRequestId: z.string().min(1), versionId: z.string().min(1), key: z.string().regex(/^artifacts\//) }).strict(), eventBridge: z.object({ providerRequestId: z.string().min(1), eventId: z.string().min(1) }).strict(), probe: z.object({ tenantId: z.string().min(1), memoryId: z.string().min(1) }).strict(),
+  s3: z.object({ providerRequestId: z.string().min(1), versionId: z.string().min(1), key: z.string().regex(/^artifacts\//), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(), eventBridge: z.object({ providerRequestId: z.string().min(1), eventId: z.string().min(1) }).strict(), probe: z.object({ tenantId: z.string().min(1), memoryId: z.string().min(1) }).strict(),
 }).strict();
 const vectorReceiptSchema = evidenceContextBaseSchema.extend({
   kind: z.literal("vector"), probe: z.object({ tenantId: z.string().min(1), memoryId: z.string().min(1), sqlClusterId: z.string().min(1) }).strict(), vector: z.object({ columnType: z.literal("VECTOR(1024)"), indexName: z.string().min(1), indexColumn: z.literal("embedding"), indexType: z.literal("VECTOR"), ready: z.literal(true), visible: z.literal(true), explainIndexName: z.string().min(1) }).strict(),
@@ -64,11 +64,13 @@ export function validateCorrelatedReceipts(value: { smoke: unknown; vector: unkn
   const ccloud = receiptSchema.parse(value.ccloud);
   if (smoke.kind !== "aws-smoke" || vector.kind !== "vector" || ccloud.kind !== "ccloud") throw new Error("Evidence receipt kinds do not match their expected probes.");
   for (const receipt of [smoke, vector, ccloud]) assertFresh(receipt, now);
+  const started = Date.parse(smoke.startedAt); const finished = Date.parse(smoke.generatedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || started > finished || finished - started > 15 * 60_000) throw new Error("Smoke receipt time window is invalid or exceeds the allowed duration.");
   for (const [field, expected, actual] of [
     ["run", smoke.runId, vector.runId], ["run", smoke.runId, ccloud.runId], ["AWS context", JSON.stringify(smoke.aws), JSON.stringify(vector.aws)], ["AWS context", JSON.stringify(smoke.aws), JSON.stringify(ccloud.aws)],
     ["Cockroach context", JSON.stringify(smoke.cockroach), JSON.stringify(vector.cockroach)], ["Cockroach context", JSON.stringify(smoke.cockroach), JSON.stringify(ccloud.cockroach)],
   ] as const) if (expected !== actual) throw new Error(`Evidence ${field} mismatch.`);
-  if (smoke.health.requestId !== smoke.requestIds.api || smoke.workspace.first.tenantId !== smoke.workspace.retry.tenantId || smoke.workspace.first.principalId !== smoke.workspace.retry.principalId || smoke.probe.tenantId !== vector.probe.tenantId || smoke.probe.memoryId !== vector.probe.memoryId || vector.probe.sqlClusterId !== smoke.cockroach.clusterId || vector.vector.indexName !== vector.vector.explainIndexName) throw new Error("Receipt semantic proof is incomplete or inconsistent.");
+  if (smoke.health.requestId !== smoke.requestIds.api || smoke.workspace.first.tenantId !== smoke.workspace.retry.tenantId || smoke.workspace.first.principalId !== smoke.workspace.retry.principalId || JSON.stringify(smoke.workspace.first.roles) !== JSON.stringify(smoke.workspace.retry.roles) || smoke.probe.tenantId !== vector.probe.tenantId || smoke.probe.memoryId !== vector.probe.memoryId || vector.probe.sqlClusterId !== smoke.cockroach.clusterId || vector.vector.indexName !== vector.vector.explainIndexName || ccloud.ccloud.clusterId !== smoke.cockroach.clusterId || ccloud.ccloud.organizationId !== smoke.cockroach.organizationId || ccloud.ccloud.tier !== smoke.cockroach.tier || ccloud.ccloud.host !== smoke.cockroach.host || ccloud.ccloud.provider !== "AWS" || ccloud.ccloud.region !== smoke.cockroach.region) throw new Error("Receipt semantic proof is incomplete or inconsistent.");
   return { smoke, vector, ccloud };
 }
 
@@ -92,7 +94,7 @@ function redactString(value: string): string {
       return url.toString();
     } catch { return raw; }
   });
-  return urls.replace(/(\b(?:api[_-]?key|access[_-]?key(?:[_-]?id)?|secret[_-]?access[_-]?key|session[_-]?token|password|token)\b\s*[=:]\s*)([^\s,}&]+)/gi, (_match, prefix: string) => `${prefix}[redacted]`).replace(/\b\d{12}\b/g, "[redacted-account]").replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]").replace(bearer, "[redacted-authorization]").replace(jwt, "[redacted]");
+  return urls.replace(/((?:\\?"|\b)(?:api[_-]?key|access[_-]?key(?:[_-]?id)?|secret[_-]?access[_-]?key|session[_-]?token|database[_-]?url|connection[_-]?string|password|token)(?:\\?"|\b)\s*[:=]\s*(?:\\?")?)([^\s,}&\\"]+)/gi, (_match, prefix: string) => `${prefix}[redacted]`).replace(/\b\d{12}\b/g, "[redacted-account]").replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]").replace(bearer, "[redacted-authorization]").replace(jwt, "[redacted]");
 }
 
 export async function atomicWriteJson(path: string, value: unknown): Promise<void> {

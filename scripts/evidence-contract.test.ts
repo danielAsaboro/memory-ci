@@ -16,7 +16,7 @@ const context = {
 };
 
 describe("production evidence contract", () => {
-  const smoke = { ...context, generatedAt: "2026-08-17T17:05:00.000Z", kind: "aws-smoke", startedAt: "2026-08-17T17:04:00.000Z", requestIds: { api: "api-1", trace: "1-abc" }, health: { status: "ok", requestId: "api-1" }, workspace: { first: { tenantId: "tenant-1", principalId: "principal-1", workspaceName: "Stash" }, retry: { tenantId: "tenant-1", principalId: "principal-1", workspaceName: "Stash" } }, bedrock: { evaluator: { modelId: context.aws.evaluatorModelId, providerRequestId: "eval-1" }, embedding: { modelId: context.aws.embeddingModelId, providerRequestId: "embed-1", dimensions: 1024, digest: "a".repeat(64) } }, s3: { providerRequestId: "s3-1", versionId: "version-1", key: "artifacts/a.json" }, eventBridge: { providerRequestId: "event-1", eventId: "event-id-1" }, probe: { tenantId: "tenant-1", memoryId: "memory-1" } };
+  const smoke = { ...context, generatedAt: "2026-08-17T17:05:00.000Z", kind: "aws-smoke", startedAt: "2026-08-17T17:04:00.000Z", requestIds: { api: "api-1", trace: "1-abc" }, health: { status: "ok", requestId: "api-1" }, workspace: { first: { tenantId: "tenant-1", principalId: "principal-1", workspaceName: "Stash", roles: ["admin", "reviewer"] }, retry: { tenantId: "tenant-1", principalId: "principal-1", workspaceName: "Stash", roles: ["admin", "reviewer"] } }, bedrock: { evaluator: { modelId: context.aws.evaluatorModelId, providerRequestId: "eval-1" }, embedding: { modelId: context.aws.embeddingModelId, providerRequestId: "embed-1", dimensions: 1024, digest: "a".repeat(64) } }, s3: { providerRequestId: "s3-1", versionId: "version-1", key: "artifacts/a.json", digest: "b".repeat(64) }, eventBridge: { providerRequestId: "event-1", eventId: "event-id-1" }, probe: { tenantId: "tenant-1", memoryId: "memory-1" } };
   const vector = { ...context, generatedAt: "2026-08-17T17:05:00.000Z", kind: "vector", probe: { tenantId: "tenant-1", memoryId: "memory-1", sqlClusterId: "cluster-1" }, vector: { columnType: "VECTOR(1024)", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: "VECTOR", ready: true, visible: true, explainIndexName: "memory_versions_embedding_idx" } };
   const ccloud = { ...context, generatedAt: "2026-08-17T17:05:00.000Z", kind: "ccloud", ccloud: { clusterId: "cluster-1", organizationId: "org-1", provider: "AWS", region: "us-east-1", tier: "BASIC", host: "cluster-1.aws-us-east-1.cockroachlabs.cloud", state: "READY" } };
   it("rejects stale, local, and malformed context before it can label a receipt production", () => {
@@ -35,11 +35,18 @@ describe("production evidence contract", () => {
     expect(() => receiptSchema.parse({ ...context, kind: "aws-smoke" })).toThrow();
     expect(() => receiptSchema.parse(smoke)).not.toThrow();
     expect(() => receiptSchema.parse({ ...vector, vector: { ...vector.vector, indexColumn: "tenant_id" } })).toThrow(/embedding/i);
+    expect(() => receiptSchema.parse({ ...smoke, workspace: { ...smoke.workspace, first: { ...smoke.workspace.first, roles: undefined } } })).toThrow(/roles/i);
   });
 
   it("redacts credentials embedded inside arbitrary provider errors", () => {
     const value = JSON.stringify(redactEvidence({ apiKey: "unsafe", accessKeyId: "AKIAunsafe", sessionToken: "unsafe", message: "request failed https://alice:s3cr3t@example.test/?token=unsafe postgresql://root:pass@db.example.test/stash password=unsafe Authorization: Bearer jwt-value" }));
     expect(value).not.toMatch(/alice|s3cr3t|unsafe|jwt-value|root:pass/);
+  });
+
+  it("redacts quoted and escaped JSON credential fragments inside provider error strings", () => {
+    const value = JSON.stringify(redactEvidence({ message: '{"apiKey":"unsafe","databaseUrl":"postgresql://u:p@db.example.test/x","nested":"{\\"sessionToken\\":\\"unsafe\\"}"}' }));
+    expect(value).not.toContain("unsafe");
+    expect(value).not.toContain("u:p");
   });
 
   it("publishes JSON atomically only after serialization succeeds", async () => {

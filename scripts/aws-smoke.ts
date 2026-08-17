@@ -92,17 +92,17 @@ async function main(): Promise<void> {
     body: JSON.stringify({ inputText: "stash production evidence probe" }),
   }));
   const embedding = validateEmbeddingResponse(JSON.parse(new TextDecoder().decode(embeddingResponse.body)), embeddingResponse.$metadata.requestId, embeddingModelId);
-  const artifactBody = JSON.stringify({ schemaVersion: "1", kind: "stash-cloud-smoke", capturedAt: new Date().toISOString(), healthRequestId: health.requestId });
+  const artifactBody = JSON.stringify({ schemaVersion: "1", kind: "stash-cloud-smoke", runId: context.runId, capturedAt: new Date().toISOString(), healthRequestId: health.requestId });
   const artifact = await putArtifact(new AwsSdkS3Transport(new S3Client({ region: config.AWS_REGION })), config.EVIDENCE_BUCKET, {
     body: artifactBody, digest: createHash("sha256").update(artifactBody).digest("hex"), mediaType: "application/json",
   });
   if (!artifact.providerRequestId || !artifact.versionId) throw new Error("S3 smoke did not produce a versioned provider receipt.");
   const event = await publishMemoryEvent(new AwsSdkEventBridgeTransport(new EventBridgeClient({ region: config.AWS_REGION })), config.EVENT_BUS_NAME, {
     id: randomUUID(), tenantId: workspace.first.tenantId, type: "stash.cloud_smoke", aggregateId: workspace.first.tenantId,
-    occurredAt: new Date().toISOString(), traceId: randomUUID(), payload: { healthRequestId: health.requestId },
+    occurredAt: new Date().toISOString(), traceId, payload: { runId: context.runId, healthRequestId: health.requestId, traceId, evaluator: { modelId: bedrock.modelId, providerRequestId: bedrock.providerRequestId }, embedding: { modelId: embedding.modelId, providerRequestId: embedding.providerRequestId, dimensions: embedding.dimensions, digest: embedding.digest }, s3: { key: artifact.uri.split("/").slice(3).join("/"), versionId: artifact.versionId, digest: artifact.digest } },
   });
   if (!event.providerRequestId || !event.eventId) throw new Error("EventBridge smoke did not produce a provider receipt.");
-  const receipt = { ...context, kind: "aws-smoke", startedAt, generatedAt: new Date().toISOString(), requestIds: { api: health.requestId, trace: traceId }, health, workspace, bedrock: { evaluator: { modelId: bedrock.modelId, providerRequestId: bedrock.providerRequestId }, embedding }, s3: { providerRequestId: artifact.providerRequestId, versionId: artifact.versionId, key: artifact.uri.split("/").slice(3).join("/") }, eventBridge: event, probe: { tenantId: workspace.first.tenantId, memoryId: bootstrapMemoryVersionId(idempotencyKey) } };
+  const receipt = { ...context, kind: "aws-smoke", startedAt, generatedAt: new Date().toISOString(), requestIds: { api: health.requestId, trace: traceId }, health, workspace, bedrock: { evaluator: { modelId: bedrock.modelId, providerRequestId: bedrock.providerRequestId }, embedding }, s3: { providerRequestId: artifact.providerRequestId, versionId: artifact.versionId, key: artifact.uri.split("/").slice(3).join("/"), digest: artifact.digest }, eventBridge: event, probe: { tenantId: workspace.first.tenantId, memoryId: bootstrapMemoryVersionId(idempotencyKey) } };
   await atomicWriteJson(output, receipt);
   process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
 }

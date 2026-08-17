@@ -123,3 +123,21 @@ npm run aws:smoke -- "$STASH_SMOKE_EVIDENCE_FILE"
 STASH_PRODUCTION_EVIDENCE=1 npm run vector:evidence -- "$STASH_VECTOR_EVIDENCE_FILE"
 npm run cloud:evidence -- docs/evidence/stash-production.json
 ```
+
+## Fix Round 3
+
+- Required exact `roles` arrays in both persisted workspace responses and added strict producer-shape parsing coverage. The smoke receipt now retains the S3 body digest and embeds the run ID in the uploaded artifact.
+- Final collection independently reads the exact S3 object version, validates metadata and body SHA-256, requires the run ID in its JSON body, and retains the observed ETag. It no longer treats a nonempty producer ID as proof.
+- Added a retained, stack-owned EventBridge-to-CloudWatch Logs observation target (`/aws/events/stash-production-observations`). The smoke event carries its run, S3, evaluator, and 1024-dimensional embedding facts; final evidence requires that AWS-owned record to exactly match the EventBridge event ID and both Bedrock model/provider-request IDs.
+- Added bounded smoke duration validation; CloudWatch and X-Ray observations must fall within the captured smoke interval plus a short propagation grace. ccloud's inner cluster facts must exactly match the shared context and the vector SQL cluster proof.
+- Vector evidence now obtains `embedding` type from `SHOW COLUMNS` and requires exact `VECTOR(1024)` on that column; index DDL is still checked for the exact visible embedding vector index used by `EXPLAIN`.
+- Production migrations now establish a SQL connection and verify cluster identity before calling the mutating migration runner, then verify identity and the exact dynamic ledger again afterward. Redaction now handles quoted and escaped JSON secret fields.
+
+### Fix Round 3 local verification
+
+- Focused evidence/API/migration/template tests: 28 passing.
+- Full verification, SAM validation/build, audit, and diff checks are run after this report update before commit.
+
+### Updated post-auth note
+
+Deploy the R3 SAM update before collecting evidence so the EventBridge observation rule/log group exists. Then use the same R2 sequence; `cloud:evidence` will now require the observed S3 object and `/aws/events/stash-production-observations` delivery record before it writes a final receipt.

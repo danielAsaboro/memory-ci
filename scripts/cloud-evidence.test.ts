@@ -7,7 +7,11 @@ import {
   redactEvidence,
   validateProductionEvidence,
   validateWorkspacePersistence,
+  validateObservedArtifact,
+  extractObservedServiceEvent,
+  extractObservedTraceId,
 } from "./cloud-evidence";
+import { createHash } from "node:crypto";
 
 describe("production cloud evidence", () => {
   it("reads only named CloudWatch and X-Ray proof IDs, never an arbitrary response string", () => {
@@ -74,5 +78,20 @@ describe("production cloud evidence", () => {
       cloudWatch: { eventId: "log-1" },
       xray: { traceId: "trace-1" },
     })).toMatchObject({ verified: true });
+  });
+
+  it("requires exact S3 bytes/version/metadata and an observed EventBridge/Bedrock record", () => {
+    const body = Buffer.from(JSON.stringify({ runId: "run-1" })); const digest = createHash("sha256").update(body).digest("hex");
+    expect(validateObservedArtifact({ ETag: "etag", VersionId: "v1", Metadata: { "content-sha256": digest } }, body, { runId: "run-1", s3: { versionId: "v1", digest } })).toEqual({ etag: "etag" });
+    expect(() => validateObservedArtifact({ ETag: "etag", VersionId: "v1", Metadata: { "content-sha256": digest } }, Buffer.from("{}"), { runId: "run-1", s3: { versionId: "v1", digest } })).toThrow(/S3/i);
+    const smoke = { runId: "run-1", eventBridge: { eventId: "event-1" }, bedrock: { evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } };
+    expect(extractObservedServiceEvent({ events: [{ eventId: "log-1", message: JSON.stringify({ detail: { eventId: "event-1", payload: { runId: "run-1", evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } } }) }] }, smoke)).toBe("log-1");
+    expect(extractObservedServiceEvent({ events: [{ eventId: "log-1", message: JSON.stringify({ detail: { eventId: "event-1", payload: { runId: "different" } } }) }] }, smoke)).toBeNull();
+  });
+
+  it("rejects X-Ray traces whose segment lies outside the smoke window", () => {
+    const trace = { Traces: [{ Id: "1-trace", Segments: [{ Document: JSON.stringify({ start_time: 100, end_time: 101 }) }] }] };
+    expect(extractObservedTraceId(trace, "1-trace", new Date(99_000).toISOString(), new Date(102_000).toISOString())).toBe("1-trace");
+    expect(extractObservedTraceId(trace, "1-trace", new Date(200_000).toISOString(), new Date(201_000).toISOString())).toBeNull();
   });
 });

@@ -31,9 +31,10 @@ async function main(): Promise<void> {
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-vector-evidence" });
   await client.connect();
   try {
-    const [version, identity, schema, indexes, seed] = await Promise.all([
+    const [version, identity, columns, schema, indexes, seed] = await Promise.all([
       client.query<{ version: string }>("SELECT version()"),
       client.query<{ cluster_id: string }>("SELECT crdb_internal.cluster_id() AS cluster_id"),
+      client.query<{ column_name: string; data_type: string }>("SELECT column_name,data_type FROM [SHOW COLUMNS FROM memory_versions] WHERE column_name='embedding'"),
       client.query<{ create_statement: string }>("SHOW CREATE TABLE memory_versions"),
       client.query<{ index_name: string; column_name: string; visible: boolean }>(
         "SELECT index_name,column_name,visible FROM [SHOW INDEX FROM memory_versions] WHERE index_name IN ('memory_versions_embedding_idx','memory_versions_active_lookup_idx') ORDER BY index_name,seq_in_index",
@@ -56,13 +57,13 @@ async function main(): Promise<void> {
     const probe = {
       schemaVersion: "1", capturedAt: new Date().toISOString(), environment: production ? "cockroach-cloud" : "local-cockroachdb",
       clusterId: production ? process.env.COCKROACH_CLUSTER_ID : null, sqlClusterId: sqlClusterId ?? null, serverVersion: version.rows[0]?.version,
-      schemaHasVector1024: schema.rows[0]?.create_statement.includes("VECTOR(1024)") ?? false,
+      schemaHasVector1024: columns.rows[0]?.column_name === "embedding" && columns.rows[0]?.data_type === "VECTOR(1024)",
       eligibleIndexes, vectorIndexDefinitions: eligibleIndexes.filter((index) => schema.rows[0]?.create_statement.includes(`CREATE VECTOR INDEX ${index}`)),
       explainUsesVectorIndex: eligibleIndexes.some((index) => explainLines.some((line) => line.includes(index))),
       explain: explainLines,
     };
     if (production && (!probe.schemaHasVector1024 || probe.eligibleIndexes.length === 0 || probe.vectorIndexDefinitions.length !== probe.eligibleIndexes.length || !probe.explainUsesVectorIndex)) throw new Error("CockroachDB Cloud vector-index proof is incomplete.");
-    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), probe: { tenantId: smokeProbe!.tenantId, memoryId: smokeProbe!.memoryId, sqlClusterId }, vector: { columnType: "VECTOR(1024)", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: "VECTOR", ready: probe.vectorIndexDefinitions.length === 1, visible: probe.eligibleIndexes.length === 1, explainIndexName: probe.explainUsesVectorIndex ? "memory_versions_embedding_idx" : "" } } : probe;
+    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), probe: { tenantId: smokeProbe!.tenantId, memoryId: smokeProbe!.memoryId, sqlClusterId }, vector: { columnType: probe.schemaHasVector1024 ? "VECTOR(1024)" : "", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: probe.vectorIndexDefinitions.length === 1 ? "VECTOR" : "", ready: probe.vectorIndexDefinitions.length === 1, visible: probe.eligibleIndexes.length === 1, explainIndexName: probe.explainUsesVectorIndex ? "memory_versions_embedding_idx" : "" } } : probe;
     const output = process.argv[2];
     if (output) await atomicWriteJson(output, receipt);
     process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);

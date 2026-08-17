@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertCloudDatabaseUrl, assertMigrationLedger } from "./migrate-production";
+import { assertCloudDatabaseUrl, assertMigrationLedger, assertSqlClusterIdentity } from "./migrate-production";
 
 describe("production migration preflight", () => {
   it("rejects private, self-hosted, and insecure database targets", () => {
@@ -11,5 +11,11 @@ describe("production migration preflight", () => {
   it("requires the exact dynamically discovered migration ledger set", () => {
     expect(() => assertMigrationLedger(["001.sql", "002.sql"], ["001.sql"])).toThrow(/migration/i);
     expect(() => assertMigrationLedger(["001.sql", "002.sql"], ["001.sql", "002.sql"])).not.toThrow();
+  });
+
+  it("checks SQL cluster identity before a migration caller may mutate", async () => {
+    const calls: string[] = [];
+    await expect(assertSqlClusterIdentity({ query: async () => { calls.push("identity"); return { rows: [{ cluster_id: "wrong" }] }; } }, "cluster-1")).rejects.toThrow(/identity/i);
+    expect(calls).toEqual(["identity"]);
   });
 });
