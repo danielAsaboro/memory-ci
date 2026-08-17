@@ -19,6 +19,7 @@ import { decideReview } from "../services/review-candidate";
 import { rollbackMemory } from "../services/rollback-memory";
 import { createEmbeddingProvider } from "../services/embedding-provider";
 import { createTrustedSourceKeyRegistry } from "../services/source-signature";
+import { canonicalJson } from "../services/provenance";
 
 export { bootstrapWorkspace } from "../services/bootstrap-workspace";
 
@@ -30,6 +31,16 @@ const asString = (input: Record<string, unknown>, key: string) => {
 const requireLifecycleRole = (context: Parameters<ApiServices["getCandidate"]>[0]) => {
   if (!context.roles.some((role) => role === "admin" || role === "reviewer")) throw new DomainError("forbidden", "Reviewer authorization is required for lifecycle mutations.");
 };
+
+function immutableSourceEvidence(source: Record<string, unknown>) {
+  return canonicalJson({ sourceType: source.sourceType, sourceUri: source.sourceUri, trustClass: source.trustClass,
+    contentDigest: source.contentDigest, signatureIdentity: source.signatureIdentity, signatureKeyId: source.signatureKeyId,
+    signatureKeyFingerprint: source.signatureKeyFingerprint, signaturePublicKey: source.signaturePublicKey,
+    signatureRegistryVersion: source.signatureRegistryVersion, signatureAlgorithm: source.signatureAlgorithm,
+    signature: source.signature, canonicalSignedPayload: source.canonicalSignedPayload,
+    signaturePayloadVersion: source.signaturePayloadVersion, signatureVerified: source.signatureVerified,
+    validUntil: source.validUntil ? new Date(source.validUntil as Date).toISOString() : null });
+}
 
 export function createApiServices(pool: Pool): ApiServices {
   const embeddings = createEmbeddingProvider();
@@ -46,13 +57,26 @@ export function createApiServices(pool: Pool): ApiServices {
         return result.rows[0] ?? null;
       } },
       sources: { upsert: async (source) => {
-        await transaction.client.query(
-          `UPSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_public_key,signature_registry_version,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,valid_until,submitted_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        const inserted = await transaction.client.query<{ id: string }>(
+          `INSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_public_key,signature_registry_version,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,valid_until,submitted_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+           ON CONFLICT (tenant_id,id) DO NOTHING RETURNING id`,
           [context.tenantId, source.id, source.sourceType, source.sourceUri, source.trustClass, source.contentDigest,
             source.signatureIdentity, source.signatureKeyId, source.signatureKeyFingerprint, source.signaturePublicKey, source.signatureRegistryVersion, source.signatureAlgorithm, source.signature,
             source.canonicalSignedPayload, source.signaturePayloadVersion, source.signatureVerified, source.validUntil, source.submittedBy],
         );
+        if (!inserted.rowCount) {
+          const existing = await transaction.client.query<Record<string, unknown>>(
+            `SELECT source_type AS "sourceType",source_uri AS "sourceUri",trust_class AS "trustClass",content_digest AS "contentDigest",
+                    signature_identity AS "signatureIdentity",signature_key_id AS "signatureKeyId",signature_key_fingerprint AS "signatureKeyFingerprint",
+                    signature_public_key AS "signaturePublicKey",signature_registry_version AS "signatureRegistryVersion",signature_algorithm AS "signatureAlgorithm",
+                    signature,canonical_signed_payload AS "canonicalSignedPayload",signature_payload_version AS "signaturePayloadVersion",
+                    signature_verified AS "signatureVerified",valid_until AS "validUntil"
+             FROM sources WHERE tenant_id=$1 AND id=$2`, [context.tenantId, source.id]);
+          if (!existing.rows[0] || immutableSourceEvidence(existing.rows[0]) !== immutableSourceEvidence(source)) {
+            throw new DomainError("conflict", "Source evidence is immutable once recorded.");
+          }
+        }
         return { id: source.id };
       } },
       candidates: new CandidateRepository(transaction), audit: new AuditRepository(transaction),

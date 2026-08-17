@@ -70,7 +70,7 @@ describe("ingestCandidate", () => {
     const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
     const { calls, dependencies } = createHarness({ trustedSourceKeys: createTrustedSourceKeyRegistry({ STASH_TRUSTED_SOURCE_KEYS: JSON.stringify([{ identity: "policy-owner", keyId: "v1", publicKey }]) }) });
     const content = "Signed threshold evidence: refunds above $150 require review.";
-    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(content)), keys.privateKey).toString("base64");
+    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload({ content, signatureIdentity: "policy-owner", signatureKeyId: "v1" })), keys.privateKey).toString("base64");
 
     const receipt = await ingestCandidate(context, {
       ...baseInput, trustClass: "authoritative",
@@ -86,7 +86,7 @@ describe("ingestCandidate", () => {
   it.each(["authenticated", "authoritative"] as const)("does not mark tampered or untrusted signed %s evidence as elevated", async (trustClass) => {
     const signedContent = "Signed threshold evidence: refunds above $150 require review.";
     const keys = generateKeyPairSync("ed25519");
-    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(signedContent)), keys.privateKey).toString("base64");
+    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload({ content: signedContent, signatureIdentity: "policy-owner", signatureKeyId: "v1" })), keys.privateKey).toString("base64");
     const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
     const { calls, dependencies } = createHarness({ trustedSourceKeys: createTrustedSourceKeyRegistry({ STASH_TRUSTED_SOURCE_KEYS: JSON.stringify([{ identity: "policy-owner", keyId: "v1", publicKey }]) }) });
 

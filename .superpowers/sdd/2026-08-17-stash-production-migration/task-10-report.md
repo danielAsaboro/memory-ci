@@ -75,3 +75,14 @@ The only deterministic double is the Bedrock semantic-judge adapter boundary in 
 - RED/GREEN: `npm run test -- --run src/services/ingest-candidate.test.ts` — 10 passed, including authenticated/authoritative unsigned and tampered/untrusted cases plus persisted-key re-verification.
 - `npm run test:integration -- --run src/db/migrations.integration.test.ts src/services/memory-release.integration.test.ts` — 13 passed, including the legacy-signature migration path.
 - `npm run test:e2e -- --project=desktop tests/e2e/poison-and-promote.spec.ts` — 4 passed.
+
+## Fix Round 4
+
+- Migration `011_harden_legacy_elevated_provenance.sql` now downgrades every elevated source with incomplete trusted evidence, independent of the legacy `signature_verified` value, and consistently downgrades only candidates referencing that tenant-local source. Complete trusted evidence remains elevated.
+- Source evidence is insert-once: the server attempts an insert and, on a reused tenant/source ID, compares the complete immutable provenance envelope/key/signature/fingerprint/version before allowing reuse; a mismatch raises a safe conflict before candidate creation.
+- Registry keys use nested identity/key-ID maps rather than colon concatenation. The signed envelope now binds envelope version, identity, key ID, and content; persisted canonical evidence is the exact envelope verified by the server.
+
+### Fix Round 4 evidence
+
+- RED/GREEN: `npm run test -- --run src/services/source-signature.test.ts src/services/ingest-candidate.test.ts` — 12 passed, including delimiter collision and identity replay rejection.
+- `npm run test:integration -- --run src/db/migrations.integration.test.ts` — 10 passed with the full migration manifest.

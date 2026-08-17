@@ -26,7 +26,7 @@ async function propose(page: Page, input: { namespaceId: string; canonicalText: 
   if (input.sign) {
     await page.getByLabel("Signature identity").fill("e2e-policy-owner");
     await page.getByLabel("Trusted key ID").fill("e2e-v1");
-    await page.getByLabel("Source signature").fill(sign(null, Buffer.from(canonicalSourceSignaturePayload(input.sourceContent)), e2ePrivateKey).toString("base64"));
+    await page.getByLabel("Source signature").fill(sign(null, Buffer.from(canonicalSourceSignaturePayload({ content: input.sourceContent, signatureIdentity: "e2e-policy-owner", signatureKeyId: "e2e-v1" })), e2ePrivateKey).toString("base64"));
     await expect(page.getByRole("status")).toContainText("server verification");
   }
   await page.getByRole("button", { name: "Submit proposal" }).click();
@@ -68,7 +68,7 @@ test("does not approve an authenticated proposal when its signed source is tampe
   await page.getByLabel("Source content").fill(`signed evidence ${runId}`);
   await page.getByLabel("Signature identity").fill("e2e-policy-owner");
   await page.getByLabel("Trusted key ID").fill("e2e-v1");
-  await page.getByLabel("Source signature").fill(sign(null, Buffer.from(canonicalSourceSignaturePayload(`signed evidence ${runId}`)), e2ePrivateKey).toString("base64"));
+  await page.getByLabel("Source signature").fill(sign(null, Buffer.from(canonicalSourceSignaturePayload({ content: `signed evidence ${runId}`, signatureIdentity: "e2e-policy-owner", signatureKeyId: "e2e-v1" })), e2ePrivateKey).toString("base64"));
   await expect(page.getByRole("status")).toContainText("server verification");
   await page.getByLabel("Source content").fill(`signed evidence ${runId} tampered`);
   await page.getByRole("button", { name: "Submit proposal" }).click();

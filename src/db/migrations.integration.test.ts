@@ -97,7 +97,7 @@ describe("CockroachDB migrations", () => {
     const applied = await database.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
     expect(applied.rows.map((row) => row.name)).toEqual([
       "001_initial.sql", "002_vector_indexes.sql", "003_security_roles.sql",
-      "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql", "007_lifecycle_idempotency.sql", "008_evaluation_replay_and_suite_results.sql", "009_source_signature_evidence.sql", "010_trusted_source_signature_evidence.sql",
+      "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql", "007_lifecycle_idempotency.sql", "008_evaluation_replay_and_suite_results.sql", "009_source_signature_evidence.sql", "010_trusted_source_signature_evidence.sql", "011_harden_legacy_elevated_provenance.sql",
     ]);
   });
 
