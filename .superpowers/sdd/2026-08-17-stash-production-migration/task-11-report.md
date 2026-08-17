@@ -70,7 +70,7 @@
    export STASH_API_BASE_URL="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)"
    export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EvidenceBucketName'].OutputValue" --output text)"
    export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
-   export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+   export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
    export STASH_BOOTSTRAP_KEY='retrieve-securely-from-production-parameter-source'
    STASH_PRODUCTION_EVIDENCE=1 COCKROACH_CLUSTER_ID='cloud-cluster-id' npm run vector:evidence -- /tmp/stash-vector-evidence.json
    npm run aws:smoke -- /tmp/stash-aws-smoke.json
@@ -115,7 +115,7 @@ COCKROACH_CLUSTER_ID="$COCKROACH_CLUSTER_ID" npm run db:migrate
 export DATABASE_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Parameters[?ParameterKey=='DatabaseSecretArn'].ParameterValue" --output text)"
 export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EvidenceBucketName'].OutputValue" --output text)"
 export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
-export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
 export BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
 export STASH_API_BASE_URL="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)"
 export STASH_BOOTSTRAP_KEY='retrieve-securely-without-echoing'

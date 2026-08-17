@@ -123,14 +123,15 @@ export function validateObservedArtifact(head: { VersionId?: string; Metadata?: 
   return { etag: head.ETag };
 }
 
-export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; aws: { accountId: string; region: string }; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
+export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; startedAt: string; generatedAt: string; aws: { accountId: string; region: string }; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
   const match = (value as { events: unknown[] }).events.find((event) => {
     if (!event || typeof event !== "object" || typeof (event as { eventId?: unknown }).eventId !== "string" || typeof (event as { message?: unknown }).message !== "string") return false;
     try {
       const envelope: unknown = JSON.parse((event as { message: string }).message);
       const record = envelope as { id?: unknown; source?: unknown; "detail-type"?: unknown; account?: unknown; region?: unknown; time?: unknown; detail?: unknown };
-      if (record.id !== smoke.eventBridge.eventId || record.source !== "memory-ci" || record["detail-type"] !== "stash.cloud_smoke" || record.account !== smoke.aws.accountId || record.region !== smoke.aws.region || typeof record.time !== "string") return false;
+      const time = typeof record.time === "string" ? Date.parse(record.time) : NaN;
+      if (record.id !== smoke.eventBridge.eventId || record.source !== "memory-ci" || record["detail-type"] !== "stash.cloud_smoke" || record.account !== smoke.aws.accountId || record.region !== smoke.aws.region || !Number.isFinite(time) || time < Date.parse(smoke.startedAt) || time > Date.parse(smoke.generatedAt) + 120_000) return false;
       const detail = envelope && typeof envelope === "object" && typeof record.detail === "object" ? record.detail as { payload?: unknown } : null;
       const payload = detail?.payload as Record<string, unknown> | undefined;
       const evaluator = payload?.evaluator as Record<string, unknown> | undefined; const embedding = payload?.embedding as Record<string, unknown> | undefined;

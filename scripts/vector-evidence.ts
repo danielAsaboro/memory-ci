@@ -7,7 +7,9 @@ import { atomicWriteJson, receiptSchema, safeErrorMessage, validateEvidenceConte
 
 type VectorIndexJob = Readonly<{ job_id: string; status: string; finished: string | null; description: string }>;
 export function selectReadyVectorIndexJob(rows: readonly VectorIndexJob[], indexName: string, tableName: string): VectorIndexJob {
-  const matching = rows.filter((job) => job.description.includes(indexName) && job.description.includes(tableName));
+  const normalized = (value: string) => value.replaceAll('"', "").replace(/\s+/g, " ").trim().toLowerCase();
+  const expected = `create vector index ${indexName} on public.${tableName}`;
+  const matching = rows.filter((job) => normalized(job.description).startsWith(expected));
   const latest = matching[0];
   if (!latest) throw new Error("No retained matching vector-index job exists; rerun the index migration and then evidence collection.");
   if (latest.status.toLowerCase() !== "succeeded" || !latest.finished) throw new Error("Latest matching vector-index job is not succeeded; rerun or repair the index migration before evidence collection.");
@@ -74,7 +76,7 @@ async function main(): Promise<void> {
       explain: explainLines,
     };
     if (production && (!probe.schemaHasVector1024 || probe.eligibleIndexes.length === 0 || probe.vectorIndexDefinitions.length !== probe.eligibleIndexes.length || !probe.explainUsesVectorIndex)) throw new Error("CockroachDB Cloud vector-index proof is incomplete.");
-    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), probe: { tenantId: smokeProbe!.tenantId, memoryId: smokeProbe!.memoryId, sqlClusterId }, vector: { columnType: probe.schemaHasVector1024 ? "VECTOR(1024)" : "", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: probe.vectorIndexDefinitions.length === 1 ? "VECTOR" : "", ready: probe.vectorIndexDefinitions.length === 1 && indexJob?.status.toLowerCase() === "succeeded", visible: probe.eligibleIndexes.length === 1, explainIndexName: probe.explainUsesVectorIndex ? "memory_versions_embedding_idx" : "", jobId: indexJob?.job_id ?? "", jobStatus: indexJob?.status.toLowerCase() ?? "", jobFinishedAt: indexJob?.finished ?? "" } } : probe;
+    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), probe: { tenantId: smokeProbe!.tenantId, memoryId: smokeProbe!.memoryId, sqlClusterId }, vector: { columnType: probe.schemaHasVector1024 ? "VECTOR(1024)" : "", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: probe.vectorIndexDefinitions.length === 1 ? "VECTOR" : "", ready: probe.vectorIndexDefinitions.length === 1 && indexJob?.status.toLowerCase() === "succeeded", visible: probe.eligibleIndexes.length === 1, explainIndexName: probe.explainUsesVectorIndex ? "memory_versions_embedding_idx" : "", jobId: indexJob?.job_id ?? "", jobStatus: indexJob?.status.toLowerCase() ?? "", jobFinishedAt: indexJob?.finished ? new Date(indexJob.finished).toISOString() : "" } } : probe;
     const output = process.argv[2];
     if (output) await atomicWriteJson(output, receipt);
     process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);

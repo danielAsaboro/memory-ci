@@ -121,12 +121,18 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
-        Statement: [{ Effect: Allow, Principal: { Service: bedrock.amazonaws.com }, Action: ["sts:AssumeRole"] }]
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock.amazonaws.com }
+            Action: ["sts:AssumeRole"]
+            Condition:
+              StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } }
+              ArnLike: { "aws:SourceArn": { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:*" } }
       Policies:
         - PolicyName: stash-bedrock-invocation-logs
           PolicyDocument:
             Version: "2012-10-17"
-            Statement: [{ Effect: Allow, Action: ["logs:CreateLogStream", "logs:PutLogEvents"], Resource: { Fn::Sub: "${BedrockInvocationLogGroup.Arn}:*" } }]
+            Statement: [{ Effect: Allow, Action: ["logs:CreateLogStream", "logs:PutLogEvents"], Resource: { Fn::Sub: "${BedrockInvocationLogGroup.Arn}:log-stream:aws/bedrock/modelinvocations" } }]
   EvidenceObservationLogPolicy:
     Type: AWS::Logs::ResourcePolicy
     Properties:
@@ -174,6 +180,7 @@ Resources:
                 Resource:
                   - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}" }
                   - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
                   - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
                   - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}" }
   OutboxRole:

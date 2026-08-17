@@ -19,7 +19,7 @@ describe("production vector evidence configuration", () => {
   });
 
   it("accepts only the latest exact succeeded vector-index schema job", () => {
-    const jobs = [{ job_id: "1", status: "succeeded", finished: "2026-08-17T17:00:00Z", description: "CREATE VECTOR INDEX memory_versions_embedding_idx ON memory_versions" }];
+    const jobs = [{ job_id: "1", status: "succeeded", finished: "2026-08-17T17:00:00Z", description: "CREATE VECTOR INDEX memory_versions_embedding_idx ON public.memory_versions" }];
     expect(selectReadyVectorIndexJob(jobs, "memory_versions_embedding_idx", "memory_versions")).toMatchObject({ job_id: "1", status: "succeeded" });
     for (const status of ["running", "paused", "failed", "canceled", "reverting"]) expect(() => selectReadyVectorIndexJob([{ ...jobs[0], status }], "memory_versions_embedding_idx", "memory_versions")).toThrow(/succeeded/i);
     expect(() => selectReadyVectorIndexJob([{ ...jobs[0], description: "CREATE VECTOR INDEX other_idx ON memory_versions" }], "memory_versions_embedding_idx", "memory_versions")).toThrow(/rerun/i);
