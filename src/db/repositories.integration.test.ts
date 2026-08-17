@@ -8,6 +8,7 @@ import { CandidateRepository } from "./candidates";
 import { createPool, withTenantTransaction } from "./client";
 import { EvaluationRepository } from "./evaluations";
 import { MemoryRepository } from "./memories";
+import { LifecycleReceiptRepository } from "./lifecycle-receipts";
 import { migrate } from "./migrate";
 import { OutboxRepository } from "./outbox";
 import { ReviewRepository } from "./reviews";
@@ -291,5 +292,17 @@ describe("tenant-bound repositories", () => {
       client.query("SELECT id FROM memory_versions WHERE tenant_id=$1 AND namespace_id=$2", [seeded.tenantId, seeded.namespaceId]),
     );
     expect(versions.rowCount).toBe(1);
+  });
+
+  it("replays the exact lifecycle receipt and rejects a reused key with another request", async () => {
+    const seeded = await seed(`receipt-${randomUUID()}`);
+    const resourceId = randomUUID(); let calls = 0;
+    const invoke = (request: unknown) => withTenantTransaction(pool, seeded.tenantId, (transaction) =>
+      new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.screen", resourceId, idempotencyKey: "same-key", request, execute: async () => ({ candidateId: resourceId, state: `state-${++calls}` }) }),
+    );
+    const first = await invoke({ decision: "screen" });
+    const replayed = await invoke({ decision: "screen" });
+    expect(replayed).toEqual(first); expect(calls).toBe(1);
+    await expect(invoke({ decision: "different" })).rejects.toMatchObject({ code: "conflict" });
   });
 });

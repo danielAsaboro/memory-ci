@@ -69,6 +69,15 @@ describe("Memory CI API router", () => {
     expect(forbidden.status).toBe(403);
   });
 
+  it.each(["/v1/candidates/candidate-1/screen", "/v1/candidates/candidate-1/evaluate", "/v1/candidates/candidate-1/reviews", "/v1/candidates/candidate-1/promote", "/v1/lineages/lineage-1/rollback"])("forbids ordinary members from lifecycle mutation %s", async (path) => {
+    let invoked = false;
+    const router = createRouter(dependencies({ auth: { async verify() { return { ...claims, roles: ["member"] }; } }, services: services({ screenCandidate: async () => { invoked = true; return {}; }, evaluateCandidate: async () => { invoked = true; return {}; }, reviewCandidate: async () => { invoked = true; return {}; }, promoteCandidate: async () => { invoked = true; return {}; }, rollbackLineage: async () => { invoked = true; return {}; } }) }));
+    const bodies: Record<string, unknown> = { screen: {}, evaluate: {}, reviews: { evaluationRunId: "run-1", decision: "approved", reason: "safe" }, promote: { reviewId: "review-1", stableKey: "refunds", reason: "safe" }, rollback: { targetVersionId: "version-1", reason: "safe" } };
+    const key = path.split("/").at(-1)!;
+    const response = await router(request(path, { method: "POST", headers: { "idempotency-key": "lifecycle-key" }, body: JSON.stringify(bodies[key]) }));
+    expect(response.status).toBe(403); expect(invoked).toBe(false);
+  });
+
   it("rejects unknown fields and missing idempotency keys before service execution", async () => {
     let calls = 0;
     const router = createRouter(dependencies({ services: services({ createCandidate: async () => { calls += 1; return {}; } }) }));

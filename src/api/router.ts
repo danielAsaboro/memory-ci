@@ -74,6 +74,9 @@ export function createRouter(dependencies: ApiDependencies): (request: Request) 
       if (!(await dependencies.membership.hasMembership(claims.subject, claims.tenantId))) {
         throw new DomainError("forbidden", "Tenant membership is required.");
       }
+      if (route.idempotent && ["screenCandidate", "evaluateCandidate", "reviewCandidate", "promoteCandidate", "rollbackLineage"].includes(route.service) && !claims.roles.some((role) => role === "admin" || role === "reviewer")) {
+        throw new DomainError("forbidden", "Reviewer authorization is required for lifecycle mutations.");
+      }
       const match = url.pathname.match(route.pattern)!;
       const routeParameters = Object.fromEntries((route.parameterNames ?? []).map((name, index) => [name, match[index + 1]]));
       let body: Record<string, unknown> = {};

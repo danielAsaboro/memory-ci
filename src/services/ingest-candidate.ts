@@ -78,5 +78,5 @@ export async function ingestCandidate(
     eventType: "candidate.proposed", aggregateType: "memory_candidate", aggregateId: candidate.id,
     payload: { tenantId: context.tenantId, namespaceId: input.namespaceId, contentDigest },
   });
-  return { id: candidate.id, state: candidate.state, contentDigest, provenanceVerified: true, redactions: redacted.redactions };
+  return { id: candidate.id, state: candidate.state, contentDigest, provenanceVerified: false, redactions: redacted.redactions };
 }

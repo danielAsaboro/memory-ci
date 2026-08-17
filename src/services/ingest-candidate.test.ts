@@ -78,7 +78,7 @@ describe("ingestCandidate", () => {
     }, secondHarness.dependencies);
 
     expect(first.contentDigest).toBe(second.contentDigest);
-    expect(first.provenanceVerified).toBe(true);
+    expect(first.provenanceVerified).toBe(false);
     expect(calls.source).toHaveLength(1);
     expect(calls.candidate).toHaveLength(1);
     expect(calls.audit).toHaveLength(1);

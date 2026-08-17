@@ -78,6 +78,7 @@ describe("CockroachDB migrations", () => {
       "evaluation_runs",
       "evaluation_scenarios",
       "idempotency_keys",
+      "lifecycle_mutation_receipts",
       "memory_candidates",
       "memory_lineages",
       "memory_reads",
@@ -96,7 +97,7 @@ describe("CockroachDB migrations", () => {
     const applied = await database.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
     expect(applied.rows.map((row) => row.name)).toEqual([
       "001_initial.sql", "002_vector_indexes.sql", "003_security_roles.sql",
-      "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql",
+      "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql", "007_lifecycle_idempotency.sql",
     ]);
   });
 

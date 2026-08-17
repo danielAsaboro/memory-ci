@@ -5,8 +5,8 @@ import { useRef, useState } from "react";
 
 import { createCandidate, queryKeys, type StashApiError } from "../lib/api-client";
 
-type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string; signatureVerified: boolean };
-const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "", signatureVerified: false };
+type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string };
+const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "" };
 
 async function digest(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -28,7 +28,7 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
         namespaceId: form.namespaceId, memoryClass: form.memoryClass, trustClass: form.trustClass,
         canonicalText: form.canonicalText, payload: { canonicalText: form.canonicalText },
         source: { id: sourceId.current, sourceType: "operator", content: form.sourceContent, contentDigest: sourceDigest,
-          sourceUri: form.sourceUri || undefined, signatureIdentity: form.signatureIdentity || undefined, signatureVerified: form.signatureVerified },
+          sourceUri: form.sourceUri || undefined, signatureIdentity: form.signatureIdentity || undefined, signatureVerified: false },
       }, key.current);
     },
     onSuccess: async (receipt) => {
@@ -50,7 +50,6 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
     <label>Source URI<input aria-label="Source URI" type="url" value={form.sourceUri} onChange={change("sourceUri")} required /></label>
     <label>Source content<textarea aria-label="Source content" value={form.sourceContent} onChange={change("sourceContent")} required /></label>
     <label>Signature identity<input aria-label="Signature identity" value={form.signatureIdentity} onChange={change("signatureIdentity")} /></label>
-    <label><input aria-label="Signature verified" type="checkbox" checked={form.signatureVerified} onChange={change("signatureVerified")} />Signature verified</label>
     {error ? <p role="alert">{error.message}</p> : null}{submitted ? <p>Candidate {submitted} submitted.</p> : null}
     <div><button type="button" className="button subtle" onClick={onClose}>Cancel</button><button className="button primary" disabled={!valid || mutation.isPending}>{mutation.isError ? "Retry proposal" : "Submit proposal"}</button></div>
   </form></div>;

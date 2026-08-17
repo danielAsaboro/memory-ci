@@ -7,6 +7,7 @@ import { AuditRepository } from "../db/audit";
 import { CandidateRepository } from "../db/candidates";
 import { withTenantTransaction, type TenantTransaction } from "../db/client";
 import { OutboxRepository } from "../db/outbox";
+import { LifecycleReceiptRepository } from "../db/lifecycle-receipts";
 import { DomainError } from "../domain/errors";
 import { screenCandidate as screen } from "../domain/screening";
 import { explainMemory } from "../services/explain-memory";
@@ -23,6 +24,9 @@ const asString = (input: Record<string, unknown>, key: string) => {
   const value = input[key];
   if (typeof value !== "string") throw new DomainError("invalid_input", `${key} is required.`);
   return value;
+};
+const requireLifecycleRole = (context: Parameters<ApiServices["getCandidate"]>[0]) => {
+  if (!context.roles.some((role) => role === "admin" || role === "reviewer")) throw new DomainError("forbidden", "Reviewer authorization is required for lifecycle mutations.");
 };
 
 export function createApiServices(pool: Pool): ApiServices {
@@ -52,7 +56,9 @@ export function createApiServices(pool: Pool): ApiServices {
       id: randomUUID,
     })),
     screenCandidate: (context, input) => run(context, async (transaction) => {
+      requireLifecycleRole(context);
       const candidateId = asString(input, "candidateId");
+      return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.screen", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const candidates = new CandidateRepository(transaction);
       const candidate = await candidates.get(candidateId);
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
@@ -86,41 +92,57 @@ export function createApiServices(pool: Pool): ApiServices {
         candidateId: updated.id, state: updated.state,
         findings: findings.map((finding) => ({ ruleId: finding.ruleId, severity: finding.severity, message: finding.message })),
       };
+      } });
     }),
     evaluateCandidate: (context, input) => run(context, async (transaction) => {
+      requireLifecycleRole(context);
       const candidateId = asString(input, "candidateId");
+      return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.evaluate", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const candidate = await new CandidateRepository(transaction).get(candidateId);
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
       if (candidate.state !== "evaluating") throw new DomainError("conflict", "Candidate is not ready for evaluation.");
       const event = await new OutboxRepository(transaction).enqueue({ eventType: "candidate.evaluation_requested",
         aggregateType: "memory_candidate", aggregateId: candidateId, payload: { tenantId: context.tenantId, candidateId } });
       return { candidateId, status: "queued", eventId: event.id };
+      } });
     }),
     reviewCandidate: (context, input) => run(context, async (transaction) => {
+      requireLifecycleRole(context);
       const evaluationRunId = asString(input, "evaluationRunId");
+      const candidateId = asString(input, "candidateId");
+      return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.review", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const policy = await transaction.client.query<{ policy_version: string }>(
         "SELECT policy_version FROM evaluation_runs WHERE tenant_id=$1 AND id=$2", [context.tenantId, evaluationRunId],
       );
       if (!policy.rows[0]) throw new DomainError("not_found", "Evaluation was not found.");
-      const reviewed = await decideReview(transaction, context, { candidateId: asString(input, "candidateId"), evaluationRunId,
+      const reviewed = await decideReview(transaction, context, { candidateId, evaluationRunId,
         requestedDecision: asString(input, "decision") as "approved" | "rejected" | "quarantined",
         reason: asString(input, "reason"), policyVersion: policy.rows[0].policy_version });
       return { reviewId: reviewed.id, candidateId: reviewed.candidateId, decision: reviewed.decision,
         evaluationRunId: reviewed.evaluationRunId, baselineRevision: reviewed.baselineRevision, policyVersion: reviewed.policyVersion };
+      } });
     }),
     promoteCandidate: (context, input) => run(context, async (transaction) => {
+      requireLifecycleRole(context);
+      const candidateId = asString(input, "candidateId");
+      return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.promote", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const version = await promoteCandidate(transaction, context, {
-      candidateId: asString(input, "candidateId"), reviewId: asString(input, "reviewId"), stableKey: asString(input, "stableKey"),
+      candidateId, reviewId: asString(input, "reviewId"), stableKey: asString(input, "stableKey"),
       reason: asString(input, "reason"), idempotencyKey: asString(input, "idempotencyKey"),
       });
       return { memoryVersionId: version.id, lineageId: version.lineageId, candidateId: version.candidateId, revision: version.revision, version: version.version, active: version.active };
+      } });
     }),
     rollbackLineage: (context, input) => run(context, async (transaction) => {
+      requireLifecycleRole(context);
+      const lineageId = asString(input, "lineageId");
+      return new LifecycleReceiptRepository(transaction).replay({ operation: "lineage.rollback", resourceId: lineageId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const version = await rollbackMemory(transaction, context, {
-      lineageId: asString(input, "lineageId"), targetVersionId: asString(input, "targetVersionId"),
+      lineageId, targetVersionId: asString(input, "targetVersionId"),
       reason: asString(input, "reason"), idempotencyKey: asString(input, "idempotencyKey"),
       });
       return { memoryVersionId: version.id, lineageId: version.lineageId, candidateId: version.candidateId, revision: version.revision, version: version.version, active: version.active };
+      } });
     }),
     searchMemory: (context, input) => run(context, (transaction) => retrieveActiveMemory(transaction, context, {
       namespaceId: asString(input, "namespaceId"), query: asString(input, "query"), purpose: asString(input, "purpose"),

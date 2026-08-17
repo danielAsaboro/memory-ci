@@ -19,6 +19,7 @@ describe("ProposeMemoryDialog", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", state: "proposed", contentDigest: "candidate-digest", provenanceVerified: true, redactions: [] }), { headers: { "content-type": "application/json", "x-request-id": "request-2" } }));
     vi.stubGlobal("fetch", fetchMock);
     renderDialog();
+    expect(screen.queryByLabelText("Signature verified")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Namespace ID"), { target: { value: "22222222-2222-4222-8222-222222222222" } });
     fireEvent.change(screen.getByLabelText("Canonical text"), { target: { value: "Refunds above $150 require review." } });
@@ -37,7 +38,7 @@ describe("ProposeMemoryDialog", () => {
     expect(JSON.parse(first.body as string)).toMatchObject({
       namespaceId: "22222222-2222-4222-8222-222222222222",
       canonicalText: "Refunds above $150 require review.",
-      source: { sourceUri: "https://records.example/refunds", content: "Signed refund policy update." },
+      source: { sourceUri: "https://records.example/refunds", content: "Signed refund policy update.", signatureVerified: false },
     });
   });
 });
