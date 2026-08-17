@@ -41,6 +41,7 @@ yarn-error.log*
 /.wrangler/
 /.aws-sam/
 /.sam-cli/
+/infra/parameters.production.json
 /outputs/
 /work/
 /.worktrees/

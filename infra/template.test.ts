@@ -26,6 +26,20 @@ describe("AWS SAM template", () => {
     });
   });
 
+  it("configures a managed 1024-dimension Bedrock embedding model and exact production parameters", async () => {
+    const template = parse(await readFile(templatePath, "utf8")) as {
+      Parameters: Record<string, { Default?: string }>;
+      Globals: { Function: { Environment: { Variables: Record<string, unknown> } } };
+      Resources: Record<string, { Properties?: Record<string, unknown> }>;
+    };
+    expect(template.Parameters.BedrockEmbeddingModelId?.Default).toBe("amazon.titan-embed-text-v2:0");
+    expect(template.Parameters.AllowedOrigin?.Default).toBe("https://trystash.xyz");
+    const variables = template.Globals.Function.Environment.Variables;
+    expect(variables).toHaveProperty("BEDROCK_EMBEDDING_MODEL_ID");
+    expect(variables).toHaveProperty("STASH_TRUSTED_SOURCE_KEYS");
+    expect(template.Resources.MemoryEventBus?.Properties).toMatchObject({ Name: "stash" });
+  });
+
   it("has retained logs, alarms, and no wildcard mutation permission", async () => {
     const source = await readFile(templatePath, "utf8");
     const template = parse(source) as { Resources: Record<string, { Type: string; Properties?: Record<string, unknown> }> };
@@ -35,5 +49,18 @@ describe("AWS SAM template", () => {
     expect(alarms.length).toBeGreaterThanOrEqual(2);
     expect(source).not.toMatch(/Action:\s*['"]?\*['"]?/);
     expect(source).not.toMatch(/(?:s3:PutObject|events:PutEvents|bedrock:InvokeModel)[\s\S]{0,180}Resource:\s*['"]?\*['"]?/);
+  });
+
+  it("separates API, outbox, and sandbox privileges by Lambda responsibility", async () => {
+    const template = parse(await readFile(templatePath, "utf8")) as {
+      Resources: Record<string, { Type: string; Properties?: Record<string, unknown> }>;
+    };
+    expect(template.Resources.OutboxRole?.Type).toBe("AWS::IAM::Role");
+    expect(template.Resources.SandboxRole?.Type).toBe("AWS::IAM::Role");
+    expect(template.Resources.OutboxFunction?.Properties?.Role).toBeDefined();
+    expect(template.Resources.SandboxFunction?.Properties?.Role).toBeDefined();
+    const apiPolicies = template.Resources.ApiRole?.Properties?.Policies as Array<{ PolicyDocument?: { Statement?: Array<{ Action?: string[] }> } }> | undefined;
+    const apiActions = apiPolicies?.flatMap((policy) => policy.PolicyDocument?.Statement?.flatMap((statement) => statement.Action ?? []) ?? []) ?? [];
+    expect(apiActions).not.toEqual(expect.arrayContaining(["s3:PutObject", "events:PutEvents"]));
   });
 });

@@ -9,6 +9,14 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+  BedrockEmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: Managed 1024-dimension Bedrock embedding model used outside test/E2E.
+  AllowedOrigin:
+    Type: String
+    Default: https://trystash.xyz
+    AllowedPattern: "^https://trystash\\.xyz$"
   StashSessionSecret:
     Type: String
     NoEcho: true
@@ -19,6 +27,11 @@ Parameters:
     NoEcho: true
     MinLength: 32
     Description: Server-only key required to bootstrap a Stash workspace.
+  StashTrustedSourceKeys:
+    Type: String
+    NoEcho: true
+    MinLength: 2
+    Description: JSON trusted Ed25519 public-key registry; never expose it to browser clients.
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -32,12 +45,14 @@ Globals:
         EVIDENCE_BUCKET: { Ref: EvidenceBucket }
         EVENT_BUS_NAME: { Ref: MemoryEventBus }
         BEDROCK_MODEL_ID: { Ref: BedrockModelId }
+        BEDROCK_EMBEDDING_MODEL_ID: { Ref: BedrockEmbeddingModelId }
+        STASH_TRUSTED_SOURCE_KEYS: { Ref: StashTrustedSourceKeys }
 
 Resources:
   ReviewerUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: memory-ci-reviewers
+      UserPoolName: stash-reviewers
       DeletionProtection: ACTIVE
       MfaConfiguration: OPTIONAL
       EnabledMfas: [SOFTWARE_TOKEN_MFA]
@@ -60,7 +75,7 @@ Resources:
       StageName: v1
       TracingEnabled: true
       Cors:
-        AllowOrigin: "'https://trystash.xyz'"
+        AllowOrigin: { Fn::Sub: "'${AllowedOrigin}'" }
         AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id,x-stash-bootstrap-key'"
         AllowMethods: "'GET,POST,OPTIONS'"
       MethodSettings:
@@ -90,7 +105,7 @@ Resources:
             NoncurrentVersionExpiration: { NoncurrentDays: 90 }
   MemoryEventBus:
     Type: AWS::Events::EventBus
-    Properties: { Name: memory-ci }
+    Properties: { Name: stash }
   ApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -107,12 +122,37 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
-                Resource: { Fn::GetAtt: [ApiLogGroup, Arn] }
+                Resource: { Fn::Sub: "${ApiLogGroup.Arn}:*" }
               - Effect: Allow
                 Action: ["secretsmanager:GetSecretValue"]
                 Resource: { Ref: DatabaseSecretArn }
               - Effect: Allow
-                Action: ["s3:PutObject", "s3:GetObject"]
+                Action: ["bedrock:InvokeModel"]
+                Resource:
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}" }
+  OutboxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Policies:
+        - PolicyName: stash-outbox
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
+                Resource: { Fn::Sub: "${OutboxLogGroup.Arn}:*" }
+              - Effect: Allow
+                Action: ["secretsmanager:GetSecretValue"]
+                Resource: { Ref: DatabaseSecretArn }
+              - Effect: Allow
+                Action: ["s3:PutObject"]
                 Resource: { Fn::Sub: "${EvidenceBucket.Arn}/artifacts/*" }
               - Effect: Allow
                 Action: ["events:PutEvents"]
@@ -120,6 +160,23 @@ Resources:
               - Effect: Allow
                 Action: ["bedrock:InvokeModel"]
                 Resource: { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}" }
+  SandboxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Policies:
+        - PolicyName: stash-sandbox
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ["logs:CreateLogStream", "logs:PutLogEvents"]
+                Resource: { Fn::Sub: "${SandboxLogGroup.Arn}:*" }
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -131,7 +188,7 @@ Resources:
         Variables:
           STASH_SESSION_SECRET: { Ref: StashSessionSecret }
           STASH_BOOTSTRAP_KEY: { Ref: StashBootstrapKey }
-          ALLOWED_ORIGIN: https://trystash.xyz
+          ALLOWED_ORIGIN: { Ref: AllowedOrigin }
       Events:
         Proxy:
           Type: Api
@@ -145,7 +202,7 @@ Resources:
       FunctionName: stash-outbox
       CodeUri: ../
       Handler: src/lambda/outbox.handler
-      Role: { Fn::GetAtt: [ApiRole, Arn] }
+      Role: { Fn::GetAtt: [OutboxRole, Arn] }
       Events:
         Poll:
           Type: ScheduleV2
@@ -159,7 +216,7 @@ Resources:
       FunctionName: stash-sandbox-refund
       CodeUri: ../
       Handler: src/lambda/sandbox.handler
-      Role: { Fn::GetAtt: [ApiRole, Arn] }
+      Role: { Fn::GetAtt: [SandboxRole, Arn] }
     Metadata:
       BuildMethod: esbuild
       BuildProperties: { EntryPoints: [src/lambda/sandbox.ts], Minify: true, Sourcemap: true, Target: es2022 }

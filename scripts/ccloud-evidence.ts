@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { redactEvidence } from "./cloud-evidence";
+
 const exec = promisify(execFile);
 
 async function run(args: string[]) {
@@ -15,4 +17,4 @@ async function run(args: string[]) {
 
 const identity = await run(["auth", "whoami"]);
 const clusters = identity.ok ? await run(["cluster", "list", "-o", "json"]) : { ok: false, error: "Skipped because ccloud is not authenticated." };
-console.log(JSON.stringify({ capturedAt: new Date().toISOString(), ccloudVersion: await run(["version"]), identity, clusters }, null, 2));
+console.log(JSON.stringify(redactEvidence({ capturedAt: new Date().toISOString(), ccloudVersion: await run(["version"]), identity, clusters }), null, 2));

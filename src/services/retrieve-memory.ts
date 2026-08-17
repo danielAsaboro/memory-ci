@@ -25,7 +25,7 @@ export async function retrieveActiveMemory(
   if (revision < 0 || revision > Number(namespace.rows[0].current_revision)) {
     throw new DomainError("invalid_input", "Requested memory revision is outside the available history.");
   }
-  let memories = input.revision === undefined
+  const memories = input.revision === undefined
     ? await new MemoryRepository(transaction).searchActiveSemantic(input.namespaceId, await embeddings.embed(input.query), 10)
     : await new MemoryRepository(transaction).getActiveAtRevision(input.namespaceId, revision);
   await transaction.client.query(
