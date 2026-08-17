@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentTrajectory } from "../domain/behavioral-diff";
 import type { Candidate, TenantContext } from "../domain/types";
+import { DomainError } from "../domain/errors";
 import type { EvaluationScenario } from "./select-scenarios";
 import { evaluateCandidate, type EvaluationDependencies } from "./evaluate-candidate";
 
@@ -35,12 +36,12 @@ function harness(candidateTrajectory: AgentTrajectory, semanticStatus: "passed" 
     namespaces: { async currentRevision() { return 7; } },
     scenarios: { async select() { return [scenario]; } },
     evaluations: {
-      async createRun(input) { return { ...input, status: "running" as const, modelId: null, providerRequestId: null }; },
+      async createRun(input) { return { ...input, status: "running" as const, modelId: null, providerRequestId: null, triggerEventId: input.triggerEventId ?? null }; },
       async recordResult(input) { calls.results.push(input); },
       async completeRun(id, status, metadata) {
         completedStatus = status;
         return { id, candidateId: candidate.id, baselineRevision: 7, policyVersion: "policy-v1", status,
-          modelId: metadata.modelId ?? null, providerRequestId: metadata.providerRequestId ?? null };
+          modelId: metadata.modelId ?? null, providerRequestId: metadata.providerRequestId ?? null, triggerEventId: null };
       },
     },
     trajectories: {
@@ -118,5 +119,14 @@ describe("evaluateCandidate", () => {
     dependencies.scenarios.select = async () => [];
     await expect(evaluateCandidate(context, candidate.id, dependencies)).resolves.toMatchObject({ status: "inconclusive", scenarioCount: 0 });
     expect(status()).toBe("inconclusive"); expect(calls.transitions).toEqual(["quarantined"]);
+    expect(calls.results).toEqual([expect.objectContaining({ status: "inconclusive", scope: "suite" })]);
+  });
+
+  it("turns unsupported trajectory execution into an ackable inconclusive result", async () => {
+    const { calls, dependencies, status } = harness(baseline);
+    dependencies.trajectories.run = async () => { throw new DomainError("inconclusive", "Tool is unsupported."); };
+    await expect(evaluateCandidate(context, candidate.id, dependencies)).resolves.toMatchObject({ status: "inconclusive" });
+    expect(status()).toBe("inconclusive");
+    expect(calls.results).toEqual([expect.objectContaining({ status: "inconclusive", baselineTrajectory: null, candidateTrajectory: null })]);
   });
 });

@@ -59,7 +59,7 @@ export async function ingestCandidate(
     id: input.source.id, tenantId: context.tenantId, sourceType: input.source.sourceType,
     sourceUri: input.source.sourceUri ?? null, trustClass: input.trustClass,
     contentDigest: input.source.contentDigest, signatureIdentity: input.source.signatureIdentity ?? null,
-    signatureVerified: input.source.signatureVerified, validUntil: input.source.validUntil ?? null,
+    signatureVerified: false, validUntil: input.source.validUntil ?? null,
     submittedBy: context.principalId,
   });
   const candidate = await dependencies.candidates.create({

@@ -80,6 +80,7 @@ describe("ingestCandidate", () => {
     expect(first.contentDigest).toBe(second.contentDigest);
     expect(first.provenanceVerified).toBe(false);
     expect(calls.source).toHaveLength(1);
+    expect(calls.source[0]).toMatchObject({ signatureVerified: false });
     expect(calls.candidate).toHaveLength(1);
     expect(calls.audit).toHaveLength(1);
     expect(calls.outbox).toHaveLength(1);

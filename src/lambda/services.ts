@@ -100,6 +100,16 @@ export function createApiServices(pool: Pool): ApiServices {
       return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.evaluate", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const candidate = await new CandidateRepository(transaction).get(candidateId);
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
+      const existing = await transaction.client.query<{ id: string }>(
+        `SELECT id FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='candidate.evaluation_requested' AND delivered_at IS NULL
+         ORDER BY created_at ASC,id ASC LIMIT 1`, [context.tenantId, candidateId],
+      );
+      if (existing.rows[0]) return { candidateId, status: "queued", eventId: existing.rows[0].id };
+      const running = await transaction.client.query<{ trigger_event_id: string | null; id: string }>(
+        `SELECT id,trigger_event_id FROM evaluation_runs WHERE tenant_id=$1 AND candidate_id=$2 AND status IN ('pending','running')
+         ORDER BY created_at DESC,id DESC LIMIT 1`, [context.tenantId, candidateId],
+      );
+      if (running.rows[0]) return { candidateId, status: "queued", eventId: running.rows[0].trigger_event_id ?? running.rows[0].id };
       if (candidate.state !== "evaluating") throw new DomainError("conflict", "Candidate is not ready for evaluation.");
       const event = await new OutboxRepository(transaction).enqueue({ eventType: "candidate.evaluation_requested",
         aggregateType: "memory_candidate", aggregateId: candidateId, payload: { tenantId: context.tenantId, candidateId } });

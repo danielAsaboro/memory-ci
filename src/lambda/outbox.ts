@@ -27,7 +27,7 @@ async function executeEvaluation(pool: Awaited<ReturnType<typeof createRuntimePo
   const semanticJudge = (input: { scenarioName: string; behavioralDiff: unknown }) => judgeBehavioralDiffWithBedrock(input, { modelId, region: process.env.AWS_REGION });
   const completed = await pool.query<{ id: string; candidate_id: string; status: "passed" | "regressed" | "inconclusive" }>(
     `SELECT id,candidate_id,status FROM evaluation_runs
-     WHERE tenant_id=$1 AND provider_request_id=$2 AND status IN ('passed','regressed','inconclusive')`, [event.tenantId, event.id],
+     WHERE tenant_id=$1 AND trigger_event_id=$2 AND status IN ('passed','regressed','inconclusive')`, [event.tenantId, event.id],
   );
   if (completed.rows[0]) return;
   await withTenantTransaction(pool, event.tenantId, async (transaction) => evaluateCandidate(
@@ -42,7 +42,7 @@ async function executeEvaluation(pool: Awaited<ReturnType<typeof createRuntimePo
       trajectories: { run: async (scenario, revision) => runSandboxTrajectory({ tenantId: event.tenantId, candidateId: event.aggregateId, memoryRevision: revision.kind === "baseline" ? revision.revision : 1, scenario, revision }) },
       semanticJudge,
       artifacts: { put: async (input) => (await putArtifact(s3, bucket, input)).uri },
-      policyVersion: process.env.EVALUATION_POLICY_VERSION ?? "v1", modelId, providerRequestId: event.id, id: randomUUID,
+      policyVersion: process.env.EVALUATION_POLICY_VERSION ?? "v1", modelId, triggerEventId: event.id, id: randomUUID,
     },
   ));
 }

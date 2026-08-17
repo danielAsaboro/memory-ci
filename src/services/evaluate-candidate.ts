@@ -12,9 +12,9 @@ import { runDeterministicAssertions } from "./run-scenario";
 import type { EvaluationScenario } from "./select-scenarios";
 
 type EvaluationPort = {
-  createRun(input: { id: string; candidateId: string; baselineRevision: number; policyVersion: string }): Promise<EvaluationRun>;
+  createRun(input: { id: string; candidateId: string; baselineRevision: number; policyVersion: string; triggerEventId?: string }): Promise<EvaluationRun>;
   recordResult(input: {
-    id: string; runId: string; scenarioId: string; status: Exclude<EvaluationStatus, "pending" | "running">;
+    id: string; runId: string; scenarioId?: string; scope?: "scenario" | "suite"; status: Exclude<EvaluationStatus, "pending" | "running">;
     baselineTrajectory: unknown; candidateTrajectory: unknown; behavioralDiff: unknown;
     deterministicAssertions: unknown; semanticJudgment?: unknown; artifactUri?: string; providerRequestId?: string;
   }): Promise<void>;
@@ -37,7 +37,7 @@ export type EvaluationDependencies = Readonly<{
   artifacts: { put(input: { digest: string; body: string; mediaType: "application/json" }): Promise<string> };
   policyVersion: string;
   modelId: string;
-  providerRequestId?: string;
+  triggerEventId?: string;
   id(): string;
   scenarioLimit?: number;
 }>;
@@ -59,11 +59,16 @@ export async function evaluateCandidate(
   if (candidate.state !== "evaluating") throw new DomainError("conflict", "Candidate is not ready for evaluation.");
   const baselineRevision = await dependencies.namespaces.currentRevision(candidate.namespaceId);
   const run = await dependencies.evaluations.createRun({
-    id: dependencies.id(), candidateId, baselineRevision, policyVersion: dependencies.policyVersion,
+    id: dependencies.id(), candidateId, baselineRevision, policyVersion: dependencies.policyVersion, triggerEventId: dependencies.triggerEventId,
   });
   const scenarios = await dependencies.scenarios.select(candidateId, dependencies.scenarioLimit ?? 20);
   if (!scenarios.length) {
-    await dependencies.evaluations.completeRun(run.id, "inconclusive", { modelId: dependencies.modelId, providerRequestId: dependencies.providerRequestId });
+    const artifact = { candidateId, baselineRevision, scope: "suite", outcome: "no_matching_scenarios" };
+    const body = canonicalJson(artifact); const digest = createHash("sha256").update(body).digest("hex");
+    const artifactUri = await dependencies.artifacts.put({ digest, body, mediaType: "application/json" });
+    await dependencies.evaluations.recordResult({ id: dependencies.id(), runId: run.id, scope: "suite", status: "inconclusive",
+      baselineTrajectory: null, candidateTrajectory: null, behavioralDiff: { reason: "no_matching_scenarios" }, deterministicAssertions: { passed: false }, artifactUri });
+    await dependencies.evaluations.completeRun(run.id, "inconclusive", { modelId: dependencies.modelId });
     await dependencies.candidates.transition(candidateId, "quarantined");
     return { id: run.id, candidateId, status: "inconclusive", baselineRevision, scenarioCount: 0 };
   }
@@ -71,8 +76,21 @@ export async function evaluateCandidate(
   let aggregate: keyof typeof severity = "passed";
   let lastProviderRequestId: string | undefined;
   for (const scenario of scenarios) {
-    const baselineTrajectory = await dependencies.trajectories.run(scenario, { kind: "baseline", revision: baselineRevision });
-    const candidateTrajectory = await dependencies.trajectories.run(scenario, { kind: "candidate", candidateId });
+    let baselineTrajectory: AgentTrajectory;
+    let candidateTrajectory: AgentTrajectory;
+    try {
+      baselineTrajectory = await dependencies.trajectories.run(scenario, { kind: "baseline", revision: baselineRevision });
+      candidateTrajectory = await dependencies.trajectories.run(scenario, { kind: "candidate", candidateId });
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "inconclusive") throw error;
+      const artifact = { candidateId, scenarioId: scenario.id, baselineRevision, observation: null, outcome: "unsupported_execution" };
+      const body = canonicalJson(artifact); const digest = createHash("sha256").update(body).digest("hex");
+      const artifactUri = await dependencies.artifacts.put({ digest, body, mediaType: "application/json" });
+      await dependencies.evaluations.recordResult({ id: dependencies.id(), runId: run.id, scenarioId: scenario.id, status: "inconclusive",
+        baselineTrajectory: null, candidateTrajectory: null, behavioralDiff: { reason: "unsupported_execution" }, deterministicAssertions: { passed: false }, artifactUri });
+      aggregate = "inconclusive";
+      continue;
+    }
     const behavioralDiff = diffBehavior(baselineTrajectory, candidateTrajectory);
     const deterministicAssertions = runDeterministicAssertions(scenario, candidateTrajectory);
     let status: keyof typeof severity = deterministicAssertions.passed ? "passed" : "regressed";
@@ -103,7 +121,7 @@ export async function evaluateCandidate(
   }
 
   await dependencies.evaluations.completeRun(run.id, aggregate, {
-    modelId: dependencies.modelId, providerRequestId: dependencies.providerRequestId ?? lastProviderRequestId,
+    modelId: dependencies.modelId, providerRequestId: lastProviderRequestId,
   });
   await dependencies.candidates.transition(candidateId, aggregate === "passed" ? "review_required" : "quarantined");
   return { id: run.id, candidateId, status: aggregate, baselineRevision, scenarioCount: scenarios.length };
