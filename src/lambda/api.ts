@@ -1,10 +1,11 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
 
 import { createRouter } from "../api/router";
 import { createWorkspaceSessionVerifier } from "../auth/workspace-session";
 import { resolveDatabaseConnectionString } from "../aws/database-secret";
+import { workspaceBootstrapSchema } from "../contracts/workspace";
 import { createPool } from "../db/client";
 import { DomainError } from "../domain/errors";
 import { errorResponse, json, parseJson } from "../api/http";
@@ -17,6 +18,8 @@ type GatewayEvent = {
 };
 
 const bootstrapInput = z.object({ displayName: z.string().trim().min(1).max(120) }).strict();
+const idempotencyKeySchema = z.string().trim().min(1).max(255).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+const defaultAllowedOrigin = "https://trystash.xyz";
 
 let runtimePromise: ReturnType<typeof createRuntime> | undefined;
 async function createRuntime() {
@@ -42,36 +45,60 @@ function requiredEnvironment(name: "STASH_SESSION_SECRET" | "STASH_BOOTSTRAP_KEY
 }
 
 function hasBootstrapKey(value: string | null): boolean {
-  if (!value) return false;
-  const expected = Buffer.from(requiredEnvironment("STASH_BOOTSTRAP_KEY"));
-  const received = Buffer.from(value);
-  return expected.byteLength === received.byteLength && timingSafeEqual(expected, received);
+  const digest = (input: string) => createHash("sha256").update(input).digest();
+  return timingSafeEqual(digest(requiredEnvironment("STASH_BOOTSTRAP_KEY")), digest(value ?? ""));
 }
 
-async function gatewayResponse(response: Response) {
-  return { statusCode: response.status, headers: Object.fromEntries(response.headers.entries()), body: await response.text() };
+function allowedOrigin(): string {
+  return process.env.ALLOWED_ORIGIN ?? defaultAllowedOrigin;
+}
+
+function requestOrigin(event: GatewayEvent): string | null {
+  return new Headers(Object.entries(event.headers ?? {}).filter((item): item is [string, string] => typeof item[1] === "string"))
+    .get("origin");
+}
+
+async function gatewayResponse(response: Response, origin: string | null) {
+  const headers = new Headers(response.headers);
+  if (origin === allowedOrigin()) {
+    headers.set("access-control-allow-origin", allowedOrigin());
+    headers.set("vary", "Origin");
+  }
+  return { statusCode: response.status, headers: Object.fromEntries(headers.entries()), body: await response.text() };
 }
 
 async function bootstrap(event: GatewayEvent, requestId: string) {
+  const origin = requestOrigin(event);
   try {
     const request = toRequest(event, requestId);
     if (!hasBootstrapKey(request.headers.get("x-stash-bootstrap-key"))) {
       throw new DomainError("unauthorized", "Bootstrap authentication is required.");
     }
-    const idempotencyKey = request.headers.get("idempotency-key");
-    if (!idempotencyKey) throw new DomainError("invalid_input", "Idempotency-Key header is required.");
+    const idempotencyKey = idempotencyKeySchema.safeParse(request.headers.get("idempotency-key"));
+    if (!idempotencyKey.success) throw new DomainError("invalid_input", "Idempotency-Key header is invalid.");
     const parsed = bootstrapInput.safeParse(await parseJson(request));
     if (!parsed.success) throw new DomainError("invalid_input", "Workspace bootstrap input is invalid.");
     const runtime = await (runtimePromise ??= createRuntime());
-    return gatewayResponse(json(await bootstrapWorkspace(runtime.pool, { idempotencyKey, displayName: parsed.data.displayName }), 201, requestId));
+    const bootstrapped = await bootstrapWorkspace(runtime.pool, {
+      idempotencyKey: idempotencyKey.data,
+      displayName: parsed.data.displayName,
+    });
+    const workspace = workspaceBootstrapSchema.parse({
+      tenantId: bootstrapped.tenantId,
+      principalId: bootstrapped.principalId,
+      roles: bootstrapped.roles,
+      workspaceName: bootstrapped.workspaceName,
+    });
+    return gatewayResponse(json(workspace, 201, requestId), origin);
   } catch (error) {
-    return gatewayResponse(errorResponse(error, requestId));
+    return gatewayResponse(errorResponse(error, requestId), origin);
   }
 }
 
 export async function handler(event: GatewayEvent) {
   const requestId = event.requestContext?.requestId ?? crypto.randomUUID();
-  if ((event.rawPath ?? event.path) === "/health") return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "ok", requestId }) };
+  const origin = requestOrigin(event);
+  if ((event.rawPath ?? event.path) === "/health") return gatewayResponse(json({ status: "ok", requestId }), origin);
   if ((event.rawPath ?? event.path) === "/v1/workspaces" && event.httpMethod === "POST") return bootstrap(event, requestId);
   try {
     const runtime = await (runtimePromise ??= createRuntime());
@@ -86,8 +113,8 @@ export async function handler(event: GatewayEvent) {
       services: runtime.services,
       requestId: crypto.randomUUID,
     });
-    return gatewayResponse(await router(toRequest(event, requestId)));
+    return gatewayResponse(await router(toRequest(event, requestId)), origin);
   } catch (error) {
-    return gatewayResponse(errorResponse(error, requestId));
+    return gatewayResponse(errorResponse(error, requestId), origin);
   }
 }

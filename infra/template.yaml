@@ -135,6 +135,7 @@ Resources:
         Variables:
           STASH_SESSION_SECRET: { Ref: StashSessionSecret }
           STASH_BOOTSTRAP_KEY: { Ref: StashBootstrapKey }
+          ALLOWED_ORIGIN: { Ref: AllowedOrigin }
       Events:
         Proxy:
           Type: Api

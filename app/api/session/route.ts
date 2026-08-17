@@ -113,11 +113,22 @@ async function parseWorkspaceBootstrap(
   signal: AbortSignal,
 ): Promise<WorkspaceMetadata | null> {
   try {
-    return workspaceBootstrapSchema.safeParse(await readJsonBeforeAbort(response, signal)).data ?? null;
+    return workspaceBootstrapSchema.safeParse(projectWorkspaceBootstrap(await readJsonBeforeAbort(response, signal))).data ?? null;
   } catch (error) {
     if (signal.aborted) throw error;
     return null;
   }
+}
+
+function projectWorkspaceBootstrap(input: unknown): unknown {
+  if (typeof input !== "object" || input === null) return input;
+  const value = input as Record<string, unknown>;
+  return {
+    tenantId: value.tenantId,
+    principalId: value.principalId,
+    roles: value.roles,
+    workspaceName: value.workspaceName,
+  };
 }
 
 async function readJsonBeforeAbort(response: Response, signal: AbortSignal): Promise<unknown> {
