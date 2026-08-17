@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { EventBridgeClient } from "@aws-sdk/client-eventbridge";
 import { S3Client } from "@aws-sdk/client-s3";
+import type { Pool } from "pg";
 
 import { resolveDatabaseConnectionString } from "../aws/database-secret";
 import { judgeBehavioralDiffWithBedrock } from "../aws/bedrock";
-import { AwsSdkEventBridgeTransport, publishMemoryEvent } from "../aws/eventbridge";
+import { AwsSdkEventBridgeTransport, publishMemoryEvent, type EventBridgeTransport } from "../aws/eventbridge";
 import { AwsSdkS3Transport, putArtifact } from "../aws/s3";
 import { CandidateRepository } from "../db/candidates";
 import { createPool } from "../db/client";
@@ -47,12 +48,8 @@ async function executeEvaluation(pool: Awaited<ReturnType<typeof createRuntimePo
   ));
 }
 
-export async function handler() {
-  const pool = await (poolPromise ??= createRuntimePool());
+export async function dispatchOutboxEvents(pool: Pool, transport: EventBridgeTransport, eventBusName: string, execute = executeEvaluation) {
   const client = await pool.connect();
-  const transport = new AwsSdkEventBridgeTransport(new EventBridgeClient({ region: process.env.AWS_REGION }));
-  const eventBusName = process.env.EVENT_BUS_NAME;
-  if (!eventBusName) throw new Error("EVENT_BUS_NAME is required");
   let delivered = 0;
   let failed = 0;
   try {
@@ -60,7 +57,10 @@ export async function handler() {
     const events = await claimPendingOutboxEvents(client, 100);
     for (const event of events) {
       try {
-        if (event.eventType === "candidate.evaluation_requested") await executeEvaluation(pool, event);
+        if (event.eventType === "candidate.evaluation_requested") {
+          const terminal = await client.query("SELECT 1 FROM evaluation_runs WHERE tenant_id=$1 AND trigger_event_id=$2 AND status IN ('passed','regressed','inconclusive')", [event.tenantId, event.id]);
+          if (!terminal.rows[0]) await execute(pool, event);
+        }
         const published = await publishMemoryEvent(transport, eventBusName, {
           id: event.id, tenantId: event.tenantId, type: event.eventType,
           aggregateId: event.aggregateId, occurredAt: new Date().toISOString(),
@@ -85,4 +85,11 @@ export async function handler() {
   } finally {
     client.release();
   }
+}
+
+export async function handler() {
+  const pool = await (poolPromise ??= createRuntimePool());
+  const eventBusName = process.env.EVENT_BUS_NAME;
+  if (!eventBusName) throw new Error("EVENT_BUS_NAME is required");
+  return dispatchOutboxEvents(pool, new AwsSdkEventBridgeTransport(new EventBridgeClient({ region: process.env.AWS_REGION })), eventBusName);
 }

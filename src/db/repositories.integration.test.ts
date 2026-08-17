@@ -13,6 +13,8 @@ import { migrate } from "./migrate";
 import { OutboxRepository } from "./outbox";
 import { ReviewRepository } from "./reviews";
 import { createApiServices } from "../lambda/services";
+import { dispatchOutboxEvents } from "../lambda/outbox";
+import type { EventBridgeTransport } from "../aws/eventbridge";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ??
   "postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable";
@@ -148,6 +150,31 @@ describe("tenant-bound repositories", () => {
     expect(rows.rows[0]?.count).toBe("1");
     await expect(services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-a" })).resolves.toEqual(first);
     await expect(services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-b" })).resolves.toEqual(second);
+  });
+
+  it("retries EventBridge publication after terminal evidence without reevaluating", async () => {
+    await pool.query("UPDATE outbox_events SET delivered_at=now() WHERE delivered_at IS NULL");
+    const seeded = await seed(`outbox-replay-${randomUUID()}`); const candidate = await createCandidate(seeded, "outbox-digest", "outbox-candidate");
+    await pool.query("UPDATE outbox_events SET delivered_at=now() WHERE tenant_id=$1 AND aggregate_id=$2", [seeded.tenantId, candidate.id]);
+    await withTenantTransaction(pool, seeded.tenantId, async (transaction) => { const candidates = new CandidateRepository(transaction); await candidates.transition(candidate.id, "screening"); await candidates.transition(candidate.id, "evaluating"); });
+    const event = await withTenantTransaction(pool, seeded.tenantId, (transaction) => new OutboxRepository(transaction).enqueue({ eventType: "candidate.evaluation_requested", aggregateType: "memory_candidate", aggregateId: candidate.id, payload: { candidateId: candidate.id } }));
+    await pool.query("UPDATE outbox_events SET available_at=now() - INTERVAL '1 second' WHERE tenant_id=$1 AND id=$2", [seeded.tenantId, event.id]);
+    const eligible = await pool.query<{ count: string }>("SELECT count(*) FROM outbox_events WHERE id=$1 AND delivered_at IS NULL AND available_at <= now()", [event.id]); expect(eligible.rows[0]?.count).toBe("1");
+    const calls = { sandbox: 0, bedrock: 0, s3: 0, complete: 0, published: [] as string[] };
+    const execute = async (runtimePool: typeof pool, item: { tenantId: string; aggregateId: string; id: string }) => withTenantTransaction(runtimePool, item.tenantId, async (transaction) => {
+      calls.sandbox += 1; calls.bedrock += 1; calls.s3 += 1; const evaluations = new EvaluationRepository(transaction); const run = await evaluations.createRun({ id: randomUUID(), candidateId: item.aggregateId, baselineRevision: 0, policyVersion: "v1", triggerEventId: item.id });
+      await evaluations.recordResult({ id: randomUUID(), runId: run.id, scope: "suite", status: "passed", baselineTrajectory: { status: "not_executed", reason: "no_scenarios" }, candidateTrajectory: { status: "not_executed", reason: "no_scenarios" }, behavioralDiff: {}, deterministicAssertions: { passed: true }, artifactUri: "s3://evidence/terminal.json", providerRequestId: "bedrock-trace" });
+      await evaluations.completeRun(run.id, "passed", { modelId: "bedrock", providerRequestId: "bedrock-trace" }); calls.complete += 1; await new CandidateRepository(transaction).transition(item.aggregateId, "review_required");
+    });
+    const failing: EventBridgeTransport = { async putEvents(input) { calls.published.push(JSON.parse(String(input.Entries?.[0]?.Detail)).eventId); throw new Error("EventBridge unavailable"); } };
+    await expect(dispatchOutboxEvents(pool, failing, "bus", execute)).resolves.toMatchObject({ failed: 1, delivered: 0 });
+    const undelivered = await pool.query<{ delivered_at: Date | null }>("SELECT delivered_at FROM outbox_events WHERE tenant_id=$1 AND id=$2", [seeded.tenantId, event.id]); expect(undelivered.rows[0]?.delivered_at).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    const succeeding: EventBridgeTransport = { async putEvents(input) { calls.published.push(JSON.parse(String(input.Entries?.[0]?.Detail)).eventId); return { FailedEntryCount: 0, Entries: [{ EventId: "provider-event" }], $metadata: { requestId: "publish-request", httpStatusCode: 200 } }; } };
+    await expect(dispatchOutboxEvents(pool, succeeding, "bus", execute)).resolves.toMatchObject({ failed: 0, delivered: 1 });
+    expect(calls).toMatchObject({ sandbox: 1, bedrock: 1, s3: 1, complete: 1, published: [event.id, event.id] });
+    const terminal = await pool.query<{ status: string; provider_request_id: string; delivered_at: Date | null }>("SELECT r.status,r.provider_request_id,o.delivered_at FROM evaluation_runs r JOIN outbox_events o ON o.tenant_id=r.tenant_id AND o.id=r.trigger_event_id WHERE r.tenant_id=$1 AND r.trigger_event_id=$2", [seeded.tenantId, event.id]);
+    expect(terminal.rows).toEqual([expect.objectContaining({ status: "passed", provider_request_id: "bedrock-trace", delivered_at: expect.any(Date) })]);
   });
 
   it("binds reviews to fresh evidence and atomically promotes, supersedes, reads history, and rolls back", async () => {

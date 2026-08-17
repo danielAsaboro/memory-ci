@@ -66,8 +66,9 @@ export async function evaluateCandidate(
     const artifact = { candidateId, baselineRevision, scope: "suite", outcome: "no_matching_scenarios" };
     const body = canonicalJson(artifact); const digest = createHash("sha256").update(body).digest("hex");
     const artifactUri = await dependencies.artifacts.put({ digest, body, mediaType: "application/json" });
+    const notExecuted = { status: "not_executed", reason: "no_scenarios" };
     await dependencies.evaluations.recordResult({ id: dependencies.id(), runId: run.id, scope: "suite", status: "inconclusive",
-      baselineTrajectory: null, candidateTrajectory: null, behavioralDiff: { reason: "no_matching_scenarios" }, deterministicAssertions: { passed: false }, artifactUri });
+      baselineTrajectory: notExecuted, candidateTrajectory: notExecuted, behavioralDiff: { reason: "no_matching_scenarios" }, deterministicAssertions: { passed: false }, artifactUri });
     await dependencies.evaluations.completeRun(run.id, "inconclusive", { modelId: dependencies.modelId });
     await dependencies.candidates.transition(candidateId, "quarantined");
     return { id: run.id, candidateId, status: "inconclusive", baselineRevision, scenarioCount: 0 };
@@ -86,8 +87,9 @@ export async function evaluateCandidate(
       const artifact = { candidateId, scenarioId: scenario.id, baselineRevision, observation: null, outcome: "unsupported_execution" };
       const body = canonicalJson(artifact); const digest = createHash("sha256").update(body).digest("hex");
       const artifactUri = await dependencies.artifacts.put({ digest, body, mediaType: "application/json" });
+      const notExecuted = { status: "not_executed", reason: "unsupported_tool" };
       await dependencies.evaluations.recordResult({ id: dependencies.id(), runId: run.id, scenarioId: scenario.id, status: "inconclusive",
-        baselineTrajectory: null, candidateTrajectory: null, behavioralDiff: { reason: "unsupported_execution" }, deterministicAssertions: { passed: false }, artifactUri });
+        baselineTrajectory: notExecuted, candidateTrajectory: notExecuted, behavioralDiff: { reason: "unsupported_execution" }, deterministicAssertions: { passed: false }, artifactUri });
       aggregate = "inconclusive";
       continue;
     }

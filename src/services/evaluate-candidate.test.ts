@@ -127,6 +127,6 @@ describe("evaluateCandidate", () => {
     dependencies.trajectories.run = async () => { throw new DomainError("inconclusive", "Tool is unsupported."); };
     await expect(evaluateCandidate(context, candidate.id, dependencies)).resolves.toMatchObject({ status: "inconclusive" });
     expect(status()).toBe("inconclusive");
-    expect(calls.results).toEqual([expect.objectContaining({ status: "inconclusive", baselineTrajectory: null, candidateTrajectory: null })]);
+    expect(calls.results).toEqual([expect.objectContaining({ status: "inconclusive", baselineTrajectory: { status: "not_executed", reason: "unsupported_tool" }, candidateTrajectory: { status: "not_executed", reason: "unsupported_tool" } })]);
   });
 });
