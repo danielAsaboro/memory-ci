@@ -69,6 +69,16 @@ describe("CockroachDB migrations", () => {
     ]);
   });
 
+  it("keys workspace bootstrap idempotency by tenant and key", async () => {
+    await migrate(databaseUrl);
+    const primaryKey = await database.query<{ column_name: string }>(
+      `SELECT column_name FROM [SHOW INDEX FROM workspace_bootstraps]
+       WHERE index_name='workspace_bootstraps_pkey' AND storing=false ORDER BY seq_in_index`,
+    );
+
+    expect(primaryKey.rows.map((row) => row.column_name)).toEqual(["tenant_id", "idempotency_key"]);
+  });
+
   it("rejects invalid candidate lifecycle states", async () => {
     await migrate(databaseUrl);
     const tenantId = randomUUID();

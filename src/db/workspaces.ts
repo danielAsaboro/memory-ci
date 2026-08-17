@@ -32,8 +32,8 @@ export class WorkspaceRepository {
   async getByIdempotencyKey(idempotencyKey: string): Promise<WorkspaceBootstrap | null> {
     const result = await this.transaction.client.query<WorkspaceBootstrapRow>(
       `SELECT tenant_id,principal_id,namespace_id,agent_id,workspace_name
-       FROM workspace_bootstraps WHERE idempotency_key=$1`,
-      [idempotencyKey],
+       FROM workspace_bootstraps WHERE tenant_id=$1 AND idempotency_key=$2`,
+      [this.transaction.tenantId, idempotencyKey],
     );
     return result.rows[0] ? mapWorkspaceBootstrap(result.rows[0]) : null;
   }
@@ -41,10 +41,10 @@ export class WorkspaceRepository {
   async create(input: WorkspaceBootstrap & { idempotencyKey: string }): Promise<WorkspaceBootstrap> {
     const result = await this.transaction.client.query<WorkspaceBootstrapRow>(
       `INSERT INTO workspace_bootstraps
-       (idempotency_key,tenant_id,principal_id,namespace_id,agent_id,workspace_name)
+       (tenant_id,idempotency_key,principal_id,namespace_id,agent_id,workspace_name)
        VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING tenant_id,principal_id,namespace_id,agent_id,workspace_name`,
-      [input.idempotencyKey, input.tenantId, input.principalId, input.namespaceId, input.agentId, input.workspaceName],
+      [input.tenantId, input.idempotencyKey, input.principalId, input.namespaceId, input.agentId, input.workspaceName],
     );
     return mapWorkspaceBootstrap(result.rows[0]!);
   }

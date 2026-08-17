@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { Pool, PoolClient } from "pg";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -18,6 +19,60 @@ const databaseUrl = (() => {
 
 let admin: Client;
 const pool = createPool(databaseUrl);
+
+function lookupBarrierPool(): Pool {
+  let lookups = 0;
+  let release: (() => void) | undefined;
+  const bothLookupsStarted = new Promise<void>((resolve) => { release = resolve; });
+
+  return {
+    connect: async () => {
+      const client = await pool.connect();
+      const query = client.query.bind(client) as unknown as (...args: unknown[]) => Promise<unknown>;
+      let firstLookup = true;
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property !== "query") return Reflect.get(target, property, receiver);
+          return async (...args: unknown[]) => {
+            const statement = args[0];
+            const text = typeof statement === "string" ? statement :
+              typeof statement === "object" && statement !== null && "text" in statement ? String(statement.text) : "";
+            if (firstLookup && text.includes("FROM workspace_bootstraps")) {
+              firstLookup = false;
+              lookups += 1;
+              if (lookups === 2) release?.();
+              if (lookups <= 2) await bothLookupsStarted;
+            }
+            return query(...args);
+          };
+        },
+      }) as PoolClient;
+    },
+  } as Pool;
+}
+
+function serializationFailureOncePool(): Pool {
+  let failed = false;
+  return {
+    connect: async () => {
+      const client = await pool.connect();
+      const query = client.query.bind(client) as unknown as (...args: unknown[]) => Promise<unknown>;
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property !== "query") return Reflect.get(target, property, receiver);
+          return async (...args: unknown[]) => {
+            const statement = args[0];
+            if (!failed && typeof statement === "string" && statement.startsWith("INSERT INTO tenants")) {
+              failed = true;
+              throw Object.assign(new Error("restart transaction"), { code: "40001" });
+            }
+            return query(...args);
+          };
+        },
+      }) as PoolClient;
+    },
+  } as Pool;
+}
 
 async function counts(tenantId: string) {
   return withTenantTransaction(pool, tenantId, async ({ client }) => {
@@ -100,6 +155,33 @@ describe("workspace bootstrap", () => {
 
     expect(repeated).toEqual(first);
     await expect(counts(first.tenantId)).resolves.toEqual(before);
+  });
+
+  it("converges two simultaneous first calls after both tenant-bound lookups start", async () => {
+    const input = { idempotencyKey: "bootstrap-concurrent-1", displayName: "Concurrent Workspace" };
+    const gatedPool = lookupBarrierPool();
+    const [first, second] = await Promise.all([
+      bootstrapWorkspace(gatedPool, input),
+      bootstrapWorkspace(gatedPool, input),
+    ]);
+
+    expect(second).toEqual(first);
+    await expect(counts(first.tenantId)).resolves.toEqual({
+      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      memory_versions: 1, principals: 2, sources: 1,
+    });
+  });
+
+  it("retries a Cockroach serialization failure without creating a partial workspace", async () => {
+    const workspace = await bootstrapWorkspace(serializationFailureOncePool(), {
+      idempotencyKey: "bootstrap-serialization-retry-1",
+      displayName: "Retried Workspace",
+    });
+
+    await expect(counts(workspace.tenantId)).resolves.toEqual({
+      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      memory_versions: 1, principals: 2, sources: 1,
+    });
   });
 
   it("isolates a different bootstrap key in a separate tenant", async () => {
