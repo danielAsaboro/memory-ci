@@ -7,6 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AuditPage from "../audit/page";
 import AgentsPage from "../agents/page";
+import ChangeDetailPage from "../changes/[candidateId]/page";
+import EvaluationsPage from "../evaluations/page";
+import MemoryDetailPage from "../memory/[memoryId]/page";
 import ChangesPage from "../changes/page";
 import MemoryPage from "../memory/page";
 import OverviewPage from "../overview/page";
@@ -14,6 +17,9 @@ import OnboardingPage from "../onboarding/page";
 import SettingsPage from "../settings/page";
 import { TerminalError } from "./async-state";
 import { StashApiError } from "../lib/api-client";
+
+const routeParams = vi.hoisted(() => ({ candidateId: "33333333-3333-4333-8333-333333333333", memoryId: "44444444-4444-4444-8444-444444444444" }));
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useParams: () => routeParams }));
 import { WorkspaceProvider } from "../lib/workspace-provider";
 
 const ids = {
@@ -99,6 +105,44 @@ describe("live product pages", () => {
     render(<LiveProvider><AgentsPage /></LiveProvider>);
     expect(await screen.findByText("Verifier")).toBeInTheDocument();
     expect(screen.queryByText("Reporting")).not.toBeInTheDocument();
+  });
+
+  it("loads the requested candidate detail from the HTTP boundary", async () => {
+    const candidate = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", namespaceId: ids.namespace, namespaceName: "arbitrary.namespace", lineageId: null, state: "approved", memoryClass: "constraint", trustClass: "authoritative", canonicalText: "Arbitrary live candidate payload", contentDigest: "arbitrary-digest", source: { id: ids.author, uri: "https://records.example/arbitrary", signatureVerified: true }, author: { id: ids.author, name: "Arbitrary reviewer" }, findingCount: 7, blockingFindingCount: 0, createdAt: "2026-08-17T10:00:00.000Z", updatedAt: "2026-08-17T10:01:00.000Z" };
+    routeParams.candidateId = candidate.id;
+    installResponses({ [`/api/stash/v1/candidates/${candidate.id}`]: new Response(JSON.stringify(candidate), { headers: { "content-type": "application/json" } }) });
+    render(<LiveProvider><ChangeDetailPage /></LiveProvider>);
+    expect(await screen.findByRole("heading", { name: candidate.canonicalText })).toBeInTheDocument();
+    expect(screen.getByText(candidate.id)).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(`/api/stash/v1/candidates/${candidate.id}`, { cache: "no-store", method: "GET" });
+  });
+
+  it("loads the requested memory detail and renders provider lineage", async () => {
+    const memory = { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", namespaceId: ids.namespace, namespaceName: "arbitrary.namespace", lineageId: ids.lineage, stableKey: "arbitrary-memory", candidateId: ids.candidate, memoryClass: "fact", canonicalText: "Arbitrary memory payload", contentDigest: "memory-digest", version: 9, revision: 44, active: true, reads: 123, validFrom: "2026-08-17T10:00:00.000Z", validUntil: null };
+    routeParams.memoryId = memory.id;
+    installResponses({ [`/api/stash/v1/memory/${memory.id}`]: new Response(JSON.stringify({ ...memory, lineage: [memory] }), { headers: { "content-type": "application/json" } }) });
+    const { unmount } = render(<LiveProvider><MemoryDetailPage /></LiveProvider>);
+    expect(await screen.findByRole("heading", { name: memory.stableKey })).toBeInTheDocument();
+    expect(screen.getByText("Version 9")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(`/api/stash/v1/memory/${memory.id}`, { cache: "no-store", method: "GET" });
+    unmount();
+    installResponses({ [`/api/stash/v1/memory/${memory.id}`]: new Response(JSON.stringify({ ...memory, lineage: [] }), { headers: { "content-type": "application/json" } }) });
+    render(<LiveProvider><MemoryDetailPage /></LiveProvider>);
+    expect(await screen.findByText("No lineage is available")).toBeInTheDocument();
+  });
+
+  it("renders live evaluation results and a neutral empty matrix", async () => {
+    const evaluationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const evaluation = { id: evaluationId, candidateId: ids.candidate, baselineRevision: 44, policyVersion: "live-policy", status: "passed", modelId: "provider-model", providerRequestId: "run-receipt", startedAt: "2026-08-17T10:00:00.000Z", completedAt: "2026-08-17T10:01:00.000Z", resultCount: 1, results: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", scenarioId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", scenarioName: "Arbitrary provider scenario", status: "passed", artifactUri: null, providerRequestId: "scenario-receipt", createdAt: "2026-08-17T10:01:00.000Z" }] };
+    installResponses({ "/api/stash/v1/evaluations": new Response(JSON.stringify([{ ...evaluation, results: undefined }]), { headers: { "content-type": "application/json" } }), [`/api/stash/v1/evaluations/${evaluationId}`]: new Response(JSON.stringify(evaluation), { headers: { "content-type": "application/json" } }) });
+    const { unmount } = render(<LiveProvider><EvaluationsPage /></LiveProvider>);
+    expect(await screen.findByText("Arbitrary provider scenario")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(`/api/stash/v1/evaluations/${evaluationId}`, { cache: "no-store", method: "GET" });
+    unmount();
+    installResponses({ "/api/stash/v1/evaluations": new Response("[]", { headers: { "content-type": "application/json" } }) });
+    render(<LiveProvider><EvaluationsPage /></LiveProvider>);
+    expect(await screen.findByText("No evaluation runs are available")).toBeInTheDocument();
+    expect(screen.getByText("0 results")).not.toHaveClass("complete");
   });
 
   it("renders only the safe API error message and request ID", () => {
