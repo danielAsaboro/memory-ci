@@ -72,7 +72,7 @@ export async function evaluateCandidate(
     const deterministicAssertions = runDeterministicAssertions(scenario, candidateTrajectory);
     let status: keyof typeof severity = deterministicAssertions.passed ? "passed" : "regressed";
     let semanticJudgment: SemanticEvaluation | undefined;
-    if (deterministicAssertions.passed && behavioralDiff.hasBehavioralChange) {
+    if (deterministicAssertions.passed && (behavioralDiff.hasBehavioralChange || behavioralDiff.memorySelection.added.length > 0 || behavioralDiff.memorySelection.removed.length > 0)) {
       const judged = await dependencies.semanticJudge({ scenarioName: scenario.name, behavioralDiff });
       lastProviderRequestId = judged.providerRequestId ?? undefined;
       if (judged.status === "complete") {

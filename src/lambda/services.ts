@@ -82,7 +82,10 @@ export function createApiServices(pool: Pool): ApiServices {
       await new AuditRepository(transaction).append({ actorId: context.principalId, action: blocked ? "candidate.quarantined" : "candidate.screened",
         resourceType: "memory_candidate", resourceId: candidateId, requestId: context.requestId,
         safeDetails: { findingCount: findings.length, blocked } });
-      return { candidate: updated, findings };
+      return {
+        candidateId: updated.id, state: updated.state,
+        findings: findings.map((finding) => ({ ruleId: finding.ruleId, severity: finding.severity, message: finding.message })),
+      };
     }),
     evaluateCandidate: (context, input) => run(context, async (transaction) => {
       const candidateId = asString(input, "candidateId");
@@ -99,18 +102,26 @@ export function createApiServices(pool: Pool): ApiServices {
         "SELECT policy_version FROM evaluation_runs WHERE tenant_id=$1 AND id=$2", [context.tenantId, evaluationRunId],
       );
       if (!policy.rows[0]) throw new DomainError("not_found", "Evaluation was not found.");
-      return decideReview(transaction, context, { candidateId: asString(input, "candidateId"), evaluationRunId,
+      const reviewed = await decideReview(transaction, context, { candidateId: asString(input, "candidateId"), evaluationRunId,
         requestedDecision: asString(input, "decision") as "approved" | "rejected" | "quarantined",
         reason: asString(input, "reason"), policyVersion: policy.rows[0].policy_version });
+      return { reviewId: reviewed.id, candidateId: reviewed.candidateId, decision: reviewed.decision,
+        evaluationRunId: reviewed.evaluationRunId, baselineRevision: reviewed.baselineRevision, policyVersion: reviewed.policyVersion };
     }),
-    promoteCandidate: (context, input) => run(context, (transaction) => promoteCandidate(transaction, context, {
+    promoteCandidate: (context, input) => run(context, async (transaction) => {
+      const version = await promoteCandidate(transaction, context, {
       candidateId: asString(input, "candidateId"), reviewId: asString(input, "reviewId"), stableKey: asString(input, "stableKey"),
       reason: asString(input, "reason"), idempotencyKey: asString(input, "idempotencyKey"),
-    })),
-    rollbackLineage: (context, input) => run(context, (transaction) => rollbackMemory(transaction, context, {
+      });
+      return { memoryVersionId: version.id, lineageId: version.lineageId, candidateId: version.candidateId, revision: version.revision, version: version.version, active: version.active };
+    }),
+    rollbackLineage: (context, input) => run(context, async (transaction) => {
+      const version = await rollbackMemory(transaction, context, {
       lineageId: asString(input, "lineageId"), targetVersionId: asString(input, "targetVersionId"),
       reason: asString(input, "reason"), idempotencyKey: asString(input, "idempotencyKey"),
-    })),
+      });
+      return { memoryVersionId: version.id, lineageId: version.lineageId, candidateId: version.candidateId, revision: version.revision, version: version.version, active: version.active };
+    }),
     searchMemory: (context, input) => run(context, (transaction) => retrieveActiveMemory(transaction, context, {
       namespaceId: asString(input, "namespaceId"), query: asString(input, "query"), purpose: asString(input, "purpose"),
       revision: typeof input.revision === "number" ? input.revision : undefined,

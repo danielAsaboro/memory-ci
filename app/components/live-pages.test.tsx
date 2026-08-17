@@ -81,7 +81,7 @@ describe("live product pages", () => {
     render(<LiveProvider><ChangesPage /></LiveProvider>);
 
     expect(await screen.findByText(/No memory changes are waiting for review/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Propose memory/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Propose memory/i })).toBeEnabled();
   });
 
   it("shows a safe request identifier when a provider request fails", async () => {

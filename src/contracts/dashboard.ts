@@ -141,6 +141,31 @@ export const workspaceStatusSchema = z.object({
   integrations: integrationsSchema,
 }).strict();
 
+// Lifecycle responses are deliberately small public receipts.  The mutation
+// boundary must not accidentally expose canonical payloads, tenant IDs, or
+// provider internals that are available to the service layer.
+export const candidateReceiptSchema = z.object({
+  id: identifierSchema,
+  state: candidateStateSchema,
+  contentDigest: z.string().min(1).max(128).optional(),
+  provenanceVerified: z.boolean().optional(),
+  redactions: z.array(z.string().max(255)).optional(),
+}).strict();
+export const screeningReceiptSchema = z.object({
+  candidateId: identifierSchema,
+  state: candidateStateSchema,
+  findings: z.array(z.object({ ruleId: z.string().min(1).max(255), severity: z.enum(["low", "medium", "high", "critical"]), message: z.string().min(1).max(2_000) }).strict()),
+}).strict();
+export const evaluationRequestSchema = z.object({ candidateId: identifierSchema, status: z.literal("queued"), eventId: identifierSchema }).strict();
+export const reviewReceiptSchema = z.object({
+  reviewId: identifierSchema, candidateId: identifierSchema, decision: z.enum(["approved", "rejected", "quarantined"]),
+  evaluationRunId: identifierSchema, baselineRevision: z.number().int().nonnegative(), policyVersion: z.string().min(1).max(255),
+}).strict();
+export const memoryMutationReceiptSchema = z.object({
+  memoryVersionId: identifierSchema, lineageId: identifierSchema, candidateId: identifierSchema,
+  revision: z.number().int().positive(), version: z.number().int().positive(), active: z.boolean(),
+}).strict();
+
 export type Identifier = z.infer<typeof identifierSchema>;
 export type Timestamp = z.infer<typeof timestampSchema>;
 export type CandidateState = z.infer<typeof candidateStateSchema>;
@@ -164,3 +189,8 @@ export type EvaluationResult = z.infer<typeof evaluationResultSchema>;
 export type EvaluationDetail = z.infer<typeof evaluationDetailSchema>;
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 export type WorkspaceStatus = z.infer<typeof workspaceStatusSchema>;
+export type CandidateReceipt = z.infer<typeof candidateReceiptSchema>;
+export type ScreeningReceipt = z.infer<typeof screeningReceiptSchema>;
+export type EvaluationRequest = z.infer<typeof evaluationRequestSchema>;
+export type ReviewReceipt = z.infer<typeof reviewReceiptSchema>;
+export type MemoryMutationReceipt = z.infer<typeof memoryMutationReceiptSchema>;

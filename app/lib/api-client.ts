@@ -3,8 +3,10 @@ import { z, type ZodType } from "zod";
 import {
   agentSchema, auditEventSchema, candidateSummarySchema, evaluationDetailSchema, evaluationSummarySchema,
   integrationsSchema, memoryDetailSchema, memorySummarySchema, overviewSchema, workspaceStatusSchema,
+  candidateReceiptSchema, evaluationRequestSchema, memoryMutationReceiptSchema, reviewReceiptSchema, screeningReceiptSchema,
   type Agent, type AuditEvent, type CandidateSummary, type EvaluationDetail, type EvaluationSummary,
-  type MemoryDetail, type MemorySummary, type Overview, type WorkspaceStatus,
+  type MemoryDetail, type MemorySummary, type Overview, type WorkspaceStatus, type CandidateReceipt, type EvaluationRequest,
+  type MemoryMutationReceipt, type ReviewReceipt, type ScreeningReceipt,
 } from "../../src/contracts/dashboard";
 
 export type IntegrationState = "ready" | "pending" | "blocked" | "unavailable" | "loading";
@@ -74,6 +76,12 @@ export const getEvaluation = (id: string): Promise<EvaluationDetail> => stashQue
 export const getAgents = (): Promise<Agent[]> => stashQuery("/v1/agents", agentSchema.array());
 export const getAuditEvents = (): Promise<AuditEvent[]> => stashQuery("/v1/audit", auditEventSchema.array());
 export const getWorkspaceStatus = (): Promise<WorkspaceStatus> => stashQuery("/v1/workspace/status", workspaceStatusSchema);
+export const createCandidate = (input: unknown, key: string): Promise<CandidateReceipt> => stashMutation("/v1/candidates", input, candidateReceiptSchema, key);
+export const screenCandidate = (id: string, key: string): Promise<ScreeningReceipt> => stashMutation(`/v1/candidates/${id}/screen`, {}, screeningReceiptSchema, key);
+export const requestEvaluation = (id: string, key: string): Promise<EvaluationRequest> => stashMutation(`/v1/candidates/${id}/evaluate`, {}, evaluationRequestSchema, key);
+export const submitReview = (id: string, input: { evaluationRunId: string; decision: "approved" | "rejected" | "quarantined"; reason: string }, key: string): Promise<ReviewReceipt> => stashMutation(`/v1/candidates/${id}/reviews`, input, reviewReceiptSchema, key);
+export const promoteCandidate = (id: string, input: { reviewId: string; stableKey: string; reason: string }, key: string): Promise<MemoryMutationReceipt> => stashMutation(`/v1/candidates/${id}/promote`, input, memoryMutationReceiptSchema, key);
+export const rollbackLineage = (id: string, input: { targetVersionId: string; reason: string }, key: string): Promise<MemoryMutationReceipt> => stashMutation(`/v1/lineages/${id}/rollback`, input, memoryMutationReceiptSchema, key);
 
 async function request<T>(path: string, init: RequestInit, schema: ZodType<T>): Promise<T> {
   let response: Response;

@@ -101,4 +101,15 @@ describe("evaluateCandidate", () => {
     expect(result.status).toBe("inconclusive");
     expect(calls.transitions).toEqual(["quarantined"]);
   });
+
+  it("does not complete evaluation or transition the candidate before the S3 evidence receipt is stored", async () => {
+    const safe: AgentTrajectory = { ...baseline, selectedMemoryIds: [candidate.id] };
+    const { calls, dependencies, status } = harness(safe);
+    dependencies.artifacts.put = async () => { throw new Error("S3 unavailable"); };
+
+    await expect(evaluateCandidate(context, candidate.id, dependencies)).rejects.toThrow("S3 unavailable");
+    expect(status()).toBe("");
+    expect(calls.results).toEqual([]);
+    expect(calls.transitions).toEqual([]);
+  });
 });

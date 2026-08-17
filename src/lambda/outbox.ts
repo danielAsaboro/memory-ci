@@ -1,14 +1,46 @@
 import { randomUUID } from "node:crypto";
 
 import { EventBridgeClient } from "@aws-sdk/client-eventbridge";
+import { S3Client } from "@aws-sdk/client-s3";
 
 import { resolveDatabaseConnectionString } from "../aws/database-secret";
+import { judgeBehavioralDiffWithBedrock } from "../aws/bedrock";
 import { AwsSdkEventBridgeTransport, publishMemoryEvent } from "../aws/eventbridge";
+import { AwsSdkS3Transport, putArtifact } from "../aws/s3";
+import { CandidateRepository } from "../db/candidates";
 import { createPool } from "../db/client";
+import { withTenantTransaction } from "../db/client";
+import { EvaluationRepository } from "../db/evaluations";
 import { claimPendingOutboxEvents, markOutboxFailure } from "../db/outbox";
+import { evaluateCandidate } from "../services/evaluate-candidate";
+import { selectScenarios } from "../services/select-scenarios";
+import { runSandboxTrajectory } from "./sandbox";
 
 let poolPromise: ReturnType<typeof createRuntimePool> | undefined;
 async function createRuntimePool() { return createPool(await resolveDatabaseConnectionString()); }
+
+async function executeEvaluation(pool: Awaited<ReturnType<typeof createRuntimePool>>, event: { tenantId: string; aggregateId: string; id: string }) {
+  const bucket = process.env.EVIDENCE_BUCKET;
+  const modelId = process.env.BEDROCK_MODEL_ID;
+  if (!bucket || !modelId) throw new Error("EVIDENCE_BUCKET and BEDROCK_MODEL_ID are required for evaluation dispatch.");
+  const s3 = new AwsSdkS3Transport(new S3Client({ region: process.env.AWS_REGION }));
+  const semanticJudge = (input: { scenarioName: string; behavioralDiff: unknown }) => judgeBehavioralDiffWithBedrock(input, { modelId, region: process.env.AWS_REGION });
+  await withTenantTransaction(pool, event.tenantId, async (transaction) => evaluateCandidate(
+    { tenantId: event.tenantId, principalId: "stash-outbox", requestId: event.id }, event.aggregateId,
+    {
+      candidates: new CandidateRepository(transaction),
+      namespaces: { currentRevision: async (namespaceId) => {
+        const result = await transaction.client.query<{ current_revision: string }>("SELECT current_revision FROM agent_namespaces WHERE tenant_id=$1 AND id=$2", [event.tenantId, namespaceId]);
+        if (!result.rows[0]) throw new Error("Evaluation namespace was not found."); return Number(result.rows[0].current_revision);
+      } },
+      scenarios: { select: (candidateId, limit) => selectScenarios(transaction, candidateId, limit) }, evaluations: new EvaluationRepository(transaction),
+      trajectories: { run: async (scenario, revision) => runSandboxTrajectory({ tenantId: event.tenantId, candidateId: event.aggregateId, memoryRevision: revision.kind === "baseline" ? revision.revision : 1, scenario, revision }) },
+      semanticJudge,
+      artifacts: { put: async (input) => (await putArtifact(s3, bucket, input)).uri },
+      policyVersion: process.env.EVALUATION_POLICY_VERSION ?? "v1", modelId, id: randomUUID,
+    },
+  ));
+}
 
 export async function handler() {
   const pool = await (poolPromise ??= createRuntimePool());
@@ -23,6 +55,7 @@ export async function handler() {
     const events = await claimPendingOutboxEvents(client, 100);
     for (const event of events) {
       try {
+        if (event.eventType === "candidate.evaluation_requested") await executeEvaluation(pool, event);
         const published = await publishMemoryEvent(transport, eventBusName, {
           id: event.id, tenantId: event.tenantId, type: event.eventType,
           aggregateId: event.aggregateId, occurredAt: new Date().toISOString(),
