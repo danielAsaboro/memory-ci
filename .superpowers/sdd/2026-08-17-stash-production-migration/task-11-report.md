@@ -151,3 +151,9 @@ Deploy the R3 SAM update before collecting evidence so the EventBridge observati
 ### Fix Round 4 local verification
 
 - Focused evidence/parameter/smoke tests, typecheck, lint, and SAM validation passed before commit. No AWS live invocation, deployment, or evidence success claim was made.
+- Final R4 gate: `npm run verify` passed (257 unit tests/41 files; 30 integration tests/6 files), followed by passing SAM validation/build and production audit.
+
+### R4 self-check
+
+- Escaped credential-value redaction is implemented and covered by adversarial quoted/escaped JSON tests.
+- Authoritative CockroachDB `SHOW JOBS` readiness correlation remains outstanding: current vector proof checks `SHOW COLUMNS`, `SHOW INDEX`, exact vector DDL, and `EXPLAIN`, but does not yet bind a matching vector-index creation job and `succeeded` state. This is a real pre-deployment hardening gap and must be completed before treating vector evidence as final production proof.
