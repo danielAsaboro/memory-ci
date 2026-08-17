@@ -50,6 +50,7 @@
 
    ```bash
    export DATABASE_URL='retrieved-securely-from-cockroachdb-cloud'
+   export COCKROACH_SQL_CLUSTER_ID='authoritative-sql-cluster-id'
    npm run db:migrate
    export DATABASE_SECRET_ARN='arn-returned-by-secrets-manager'
    ```
@@ -73,7 +74,7 @@
    export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
    export STASH_BEDROCK_LOGGING_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)"
    export STASH_BOOTSTRAP_KEY='retrieve-securely-from-production-parameter-source'
-   STASH_PRODUCTION_EVIDENCE=1 COCKROACH_CLUSTER_ID='cloud-cluster-id' npm run vector:evidence -- /tmp/stash-vector-evidence.json
+   STASH_PRODUCTION_EVIDENCE=1 COCKROACH_CLUSTER_ID='cloud-cluster-id' COCKROACH_SQL_CLUSTER_ID='authoritative-sql-cluster-id' npm run vector:evidence -- /tmp/stash-vector-evidence.json
    npm run aws:smoke -- /tmp/stash-aws-smoke.json
    STASH_SMOKE_EVIDENCE_FILE=/tmp/stash-aws-smoke.json STASH_VECTOR_EVIDENCE_FILE=/tmp/stash-vector-evidence.json npm run cloud:evidence -- docs/evidence/stash-production.json
    ```
@@ -102,6 +103,7 @@ Use a temporary directory and never print the database URL or parameter secrets.
 ```bash
 export AWS_REGION=us-east-1 STASH_STACK_NAME=stash-production
 export COCKROACH_CLUSTER_ID='authenticated-cluster-id'
+export COCKROACH_SQL_CLUSTER_ID='authoritative-sql-cluster-id'
 export COCKROACH_ORGANIZATION_ID='authenticated-organization-id'
 export COCKROACH_HOST='authenticated-cluster-host.cockroachlabs.cloud'
 export COCKROACH_TIER=BASIC
@@ -112,7 +114,7 @@ export STASH_CCLOUD_EVIDENCE_FILE=/tmp/stash-ccloud-evidence.json
 npm run evidence:context -- "$STASH_EVIDENCE_CONTEXT_FILE"
 npm run ccloud:evidence -- "$STASH_CCLOUD_EVIDENCE_FILE"
 export DATABASE_URL="$(< /tmp/stash-production-database-url)"
-COCKROACH_CLUSTER_ID="$COCKROACH_CLUSTER_ID" npm run db:migrate
+COCKROACH_SQL_CLUSTER_ID="$COCKROACH_SQL_CLUSTER_ID" npm run db:migrate
 export DATABASE_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Parameters[?ParameterKey=='DatabaseSecretArn'].ParameterValue" --output text)"
 export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EvidenceBucketName'].OutputValue" --output text)"
 export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
@@ -176,3 +178,10 @@ Before every live `npm run aws:smoke`, export the stack-owned Bedrock delivery r
 export STASH_BEDROCK_LOGGING_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)"
 npm run aws:smoke -- "$STASH_SMOKE_EVIDENCE_FILE"
 ```
+
+## Task 12 live SQL identity correction
+
+- CockroachDB Cloud exposes two authoritative identifiers: the control-plane cluster resource ID returned by `ccloud`, and the SQL cluster ID returned by `crdb_internal.cluster_id()`. They are not interchangeable.
+- Production migration and vector evidence now enable `allow_unsafe_internals` for their verified session, compare the SQL value only to `COCKROACH_SQL_CLUSTER_ID`, and retain `COCKROACH_CLUSTER_ID` for ccloud/control-plane correlation.
+- Focused regressions passed (16 tests), followed by the complete release gate: 260 unit tests, 30 integration tests, lint, typecheck, Next build, SAM validation/build, production audit, and diff check.
+- The live CockroachDB Cloud target applied and verified all 11 migrations against its SQL identity before AWS deployment.

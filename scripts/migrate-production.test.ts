@@ -15,7 +15,13 @@ describe("production migration preflight", () => {
 
   it("checks SQL cluster identity before a migration caller may mutate", async () => {
     const calls: string[] = [];
-    await expect(assertSqlClusterIdentity({ query: async () => { calls.push("identity"); return { rows: [{ cluster_id: "wrong" }] }; } }, "cluster-1")).rejects.toThrow(/identity/i);
-    expect(calls).toEqual(["identity"]);
+    await expect(assertSqlClusterIdentity({ query: async (sql) => {
+      calls.push(sql);
+      return { rows: sql.startsWith("SELECT") ? [{ cluster_id: "wrong" }] : [] };
+    } }, "sql-cluster-1")).rejects.toThrow(/identity/i);
+    expect(calls).toEqual([
+      "SET allow_unsafe_internals = on",
+      "SELECT crdb_internal.cluster_id() AS cluster_id",
+    ]);
   });
 });

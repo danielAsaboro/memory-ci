@@ -19,14 +19,15 @@ export function assertMigrationLedger(expected: readonly string[], applied: read
 }
 
 export async function assertSqlClusterIdentity(client: { query(sql: string): Promise<{ rows: { cluster_id: string }[] }> }, clusterId: string): Promise<void> {
+  await client.query("SET allow_unsafe_internals = on");
   const identity = await client.query("SELECT crdb_internal.cluster_id() AS cluster_id");
-  if (identity.rows[0]?.cluster_id !== clusterId) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
+  if (identity.rows[0]?.cluster_id !== clusterId) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_SQL_CLUSTER_ID.");
 }
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
-  const clusterId = process.env.COCKROACH_CLUSTER_ID;
-  if (!databaseUrl || !clusterId) throw new Error("DATABASE_URL and COCKROACH_CLUSTER_ID are required; migrations refuse a local default for production use.");
+  const clusterId = process.env.COCKROACH_SQL_CLUSTER_ID;
+  if (!databaseUrl || !clusterId) throw new Error("DATABASE_URL and COCKROACH_SQL_CLUSTER_ID are required; migrations refuse a local default for production use.");
   assertCloudDatabaseUrl(databaseUrl);
   const expected = (await readdir(path.join(process.cwd(), "db/migrations"))).filter((file) => file.endsWith(".sql")).sort((left, right) => left.localeCompare(right));
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-production-migration-ledger" });

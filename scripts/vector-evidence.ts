@@ -20,6 +20,7 @@ export function selectReadyVectorIndexJob(rows: readonly VectorIndexJob[], index
 export function assertProductionVectorConfiguration(environment: Readonly<Record<string, string | undefined>>): void {
   if (environment.STASH_PRODUCTION_EVIDENCE !== "1") return;
   if (!environment.COCKROACH_CLUSTER_ID) throw new Error("COCKROACH_CLUSTER_ID is required for production vector evidence.");
+  if (!environment.COCKROACH_SQL_CLUSTER_ID) throw new Error("COCKROACH_SQL_CLUSTER_ID is required for production vector evidence.");
   const databaseUrl = environment.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required for production vector evidence.");
   let url: URL;
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-vector-evidence" });
   await client.connect();
   try {
+    if (production) await client.query("SET allow_unsafe_internals = on");
     const [version, identity, columns, schema, indexes, jobs, seed] = await Promise.all([
       client.query<{ version: string }>("SELECT version()"),
       client.query<{ cluster_id: string }>("SELECT crdb_internal.cluster_id() AS cluster_id"),
@@ -67,7 +69,7 @@ async function main(): Promise<void> {
     const eligibleIndexes = [...new Set(indexes.rows.filter((row) => row.index_name === "memory_versions_embedding_idx" && row.column_name === "embedding" && row.visible).map((row) => row.index_name))];
     const indexJob = production ? selectReadyVectorIndexJob(jobs.rows, "memory_versions_embedding_idx", "memory_versions") : null;
     const sqlClusterId = identity.rows[0]?.cluster_id;
-    if (production && sqlClusterId !== process.env.COCKROACH_CLUSTER_ID) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
+    if (production && sqlClusterId !== process.env.COCKROACH_SQL_CLUSTER_ID) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_SQL_CLUSTER_ID.");
     const probe = {
       schemaVersion: "1", capturedAt: new Date().toISOString(), environment: production ? "cockroach-cloud" : "local-cockroachdb",
       clusterId: production ? process.env.COCKROACH_CLUSTER_ID : null, sqlClusterId: sqlClusterId ?? null, serverVersion: version.rows[0]?.version,

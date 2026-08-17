@@ -5,17 +5,17 @@ import { assertProductionVectorConfiguration, selectReadyVectorIndexJob } from "
 describe("production vector evidence configuration", () => {
   it("rejects local database URLs even if a cluster ID was supplied", () => {
     expect(() => assertProductionVectorConfiguration({
-      STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cluster-1", DATABASE_URL: "postgresql://root@127.0.0.1:26258/stash?sslmode=disable",
+      STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cloud-cluster-1", COCKROACH_SQL_CLUSTER_ID: "sql-cluster-1", DATABASE_URL: "postgresql://root@127.0.0.1:26258/stash?sslmode=disable",
     })).toThrow(/local/i);
   });
 
   it("requires an explicit Cloud cluster ID before labeling evidence production", () => {
-    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", DATABASE_URL: "postgresql://user@host.cockroachlabs.cloud:26257/stash?sslmode=verify-full" })).toThrow(/COCKROACH_CLUSTER_ID/);
+    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cloud-cluster-1", DATABASE_URL: "postgresql://user@host.cockroachlabs.cloud:26257/stash?sslmode=verify-full" })).toThrow(/COCKROACH_SQL_CLUSTER_ID/);
   });
 
   it("rejects private-network and non-Cockroach Cloud database hosts", () => {
-    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cluster-1", DATABASE_URL: "postgresql://user@10.0.0.5:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
-    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cluster-1", DATABASE_URL: "postgresql://user@db.example.test:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
+    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cloud-cluster-1", COCKROACH_SQL_CLUSTER_ID: "sql-cluster-1", DATABASE_URL: "postgresql://user@10.0.0.5:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
+    expect(() => assertProductionVectorConfiguration({ STASH_PRODUCTION_EVIDENCE: "1", COCKROACH_CLUSTER_ID: "cloud-cluster-1", COCKROACH_SQL_CLUSTER_ID: "sql-cluster-1", DATABASE_URL: "postgresql://user@db.example.test:26257/stash?sslmode=verify-full" })).toThrow(/Cloud/i);
   });
 
   it("accepts only the latest exact succeeded vector-index schema job", () => {

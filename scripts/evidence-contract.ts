@@ -21,7 +21,7 @@ const awsSchema = z.object({
   evaluatorModelId: z.literal("us.anthropic.claude-haiku-4-5-20251001-v1:0"), embeddingModelId: z.literal("amazon.titan-embed-text-v2:0"),
 }).strict();
 const cockroachSchema = z.object({
-  clusterId: z.string().min(1).refine((value) => !/fixture|demo|local/i.test(value)), organizationId: z.string().min(1), region: z.literal("us-east-1"),
+  clusterId: z.string().min(1).refine((value) => !/fixture|demo|local/i.test(value)), sqlClusterId: z.string().min(1).refine((value) => !/fixture|demo|local/i.test(value)), organizationId: z.string().min(1), region: z.literal("us-east-1"),
   tier: z.enum(["BASIC", "STANDARD", "ADVANCED", "SERVERLESS"]), host: z.string().min(1),
 }).strict().superRefine((value, context) => {
   if (privateHost.test(value.host) || !/\.cockroachlabs\.cloud$/i.test(value.host)) context.addIssue({ code: "custom", message: "CockroachDB Cloud host must be a public cockroachlabs.cloud hostname." });
@@ -70,7 +70,7 @@ export function validateCorrelatedReceipts(value: { smoke: unknown; vector: unkn
     ["run", smoke.runId, vector.runId], ["run", smoke.runId, ccloud.runId], ["AWS context", JSON.stringify(smoke.aws), JSON.stringify(vector.aws)], ["AWS context", JSON.stringify(smoke.aws), JSON.stringify(ccloud.aws)],
     ["Cockroach context", JSON.stringify(smoke.cockroach), JSON.stringify(vector.cockroach)], ["Cockroach context", JSON.stringify(smoke.cockroach), JSON.stringify(ccloud.cockroach)],
   ] as const) if (expected !== actual) throw new Error(`Evidence ${field} mismatch.`);
-  if (smoke.health.requestId !== smoke.requestIds.api || smoke.workspace.first.tenantId !== smoke.workspace.retry.tenantId || smoke.workspace.first.principalId !== smoke.workspace.retry.principalId || JSON.stringify(smoke.workspace.first.roles) !== JSON.stringify(smoke.workspace.retry.roles) || smoke.probe.tenantId !== vector.probe.tenantId || smoke.probe.memoryId !== vector.probe.memoryId || vector.probe.sqlClusterId !== smoke.cockroach.clusterId || vector.vector.indexName !== vector.vector.explainIndexName || ccloud.ccloud.clusterId !== smoke.cockroach.clusterId || ccloud.ccloud.organizationId !== smoke.cockroach.organizationId || ccloud.ccloud.tier !== smoke.cockroach.tier || ccloud.ccloud.host !== smoke.cockroach.host || ccloud.ccloud.provider !== "AWS" || ccloud.ccloud.region !== smoke.cockroach.region) throw new Error("Receipt semantic proof is incomplete or inconsistent.");
+  if (smoke.health.requestId !== smoke.requestIds.api || smoke.workspace.first.tenantId !== smoke.workspace.retry.tenantId || smoke.workspace.first.principalId !== smoke.workspace.retry.principalId || JSON.stringify(smoke.workspace.first.roles) !== JSON.stringify(smoke.workspace.retry.roles) || smoke.probe.tenantId !== vector.probe.tenantId || smoke.probe.memoryId !== vector.probe.memoryId || vector.probe.sqlClusterId !== smoke.cockroach.sqlClusterId || vector.vector.indexName !== vector.vector.explainIndexName || ccloud.ccloud.clusterId !== smoke.cockroach.clusterId || ccloud.ccloud.organizationId !== smoke.cockroach.organizationId || ccloud.ccloud.tier !== smoke.cockroach.tier || ccloud.ccloud.host !== smoke.cockroach.host || ccloud.ccloud.provider !== "AWS" || ccloud.ccloud.region !== smoke.cockroach.region) throw new Error("Receipt semantic proof is incomplete or inconsistent.");
   return { smoke, vector, ccloud };
 }
 
