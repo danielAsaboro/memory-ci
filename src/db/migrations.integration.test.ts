@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -13,9 +16,32 @@ const databaseUrl = (() => {
   url.pathname = `/${databaseName}`;
   return url.toString();
 })();
+const migrationDirectory = fileURLToPath(new URL("../../db/migrations", import.meta.url));
 
 let admin: Client;
 let database: Client;
+
+async function migrateThrough005(url: string): Promise<void> {
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    await client.query(`CREATE TABLE schema_migrations (
+      name STRING PRIMARY KEY, checksum STRING NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+    const files = (await readdir(migrationDirectory))
+      .filter((file) => file.endsWith(".sql") && file <= "005_workspace_sessions.sql")
+      .sort((left, right) => left.localeCompare(right));
+    for (const file of files) {
+      const sql = await readFile(path.join(migrationDirectory, file), "utf8");
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations (name,checksum) VALUES ($1,$2)", [
+        file, createHash("sha256").update(sql).digest("hex"),
+      ]);
+    }
+  } finally {
+    await client.end();
+  }
+}
 
 describe("CockroachDB migrations", () => {
   beforeAll(async () => {
@@ -67,6 +93,11 @@ describe("CockroachDB migrations", () => {
       "tenants",
       "workspace_bootstraps",
     ]);
+    const applied = await database.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
+    expect(applied.rows.map((row) => row.name)).toEqual([
+      "001_initial.sql", "002_vector_indexes.sql", "003_security_roles.sql",
+      "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql",
+    ]);
   });
 
   it("keys workspace bootstrap idempotency by tenant and key", async () => {
@@ -77,6 +108,55 @@ describe("CockroachDB migrations", () => {
     );
 
     expect(primaryKey.rows.map((row) => row.column_name)).toEqual(["tenant_id", "idempotency_key"]);
+  });
+
+  it("upgrades an existing 005 workspace bootstrap row to the tenant-bound primary key", async () => {
+    const upgradeDatabaseName = `memory_ci_upgrade_${randomUUID().replaceAll("-", "")}`;
+    const upgradeDatabaseUrl = new URL(adminUrl);
+    upgradeDatabaseUrl.pathname = `/${upgradeDatabaseName}`;
+    await admin.query(`CREATE DATABASE ${upgradeDatabaseName}`);
+    const upgrade = new Client({ connectionString: upgradeDatabaseUrl.toString() });
+    try {
+      await migrateThrough005(upgradeDatabaseUrl.toString());
+      await upgrade.connect();
+      const tenantId = randomUUID();
+      const principalId = randomUUID();
+      const namespaceId = randomUUID();
+      const agentId = randomUUID();
+      await upgrade.query("INSERT INTO tenants (id,slug,name) VALUES ($1,$2,'Upgrade Workspace')", [tenantId, `upgrade-${tenantId}`]);
+      await upgrade.query(
+        `INSERT INTO principals (tenant_id,id,kind,display_name) VALUES
+         ($1,$2,'human','Owner'),($1,$3,'agent','Agent')`,
+        [tenantId, principalId, agentId],
+      );
+      await upgrade.query(
+        "INSERT INTO agent_namespaces (tenant_id,id,slug,name) VALUES ($1,$2,'refunds','Refund policy')",
+        [tenantId, namespaceId],
+      );
+      await upgrade.query(
+        `INSERT INTO workspace_bootstraps
+         (idempotency_key,tenant_id,principal_id,namespace_id,agent_id,workspace_name)
+         VALUES ('upgrade-bootstrap-key',$1,$2,$3,$4,'Upgrade Workspace')`,
+        [tenantId, principalId, namespaceId, agentId],
+      );
+
+      await migrate(upgradeDatabaseUrl.toString());
+
+      const persisted = await upgrade.query<{ tenant_id: string; workspace_name: string }>(
+        "SELECT tenant_id,workspace_name FROM workspace_bootstraps WHERE tenant_id=$1 AND idempotency_key='upgrade-bootstrap-key'",
+        [tenantId],
+      );
+      const primaryKey = await upgrade.query<{ column_name: string }>(
+        `SELECT column_name FROM [SHOW INDEX FROM workspace_bootstraps]
+         WHERE index_name='workspace_bootstraps_pkey' AND storing=false ORDER BY seq_in_index`,
+      );
+
+      expect(persisted.rows).toEqual([{ tenant_id: tenantId, workspace_name: "Upgrade Workspace" }]);
+      expect(primaryKey.rows.map((row) => row.column_name)).toEqual(["tenant_id", "idempotency_key"]);
+    } finally {
+      await upgrade.end().catch(() => undefined);
+      await admin.query(`DROP DATABASE ${upgradeDatabaseName} CASCADE`);
+    }
   });
 
   it("rejects invalid candidate lifecycle states", async () => {
