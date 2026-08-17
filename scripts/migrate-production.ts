@@ -11,7 +11,7 @@ export function assertCloudDatabaseUrl(value: string): void {
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("DATABASE_URL must target CockroachDB Cloud."); }
   if (!/\.cockroachlabs\.cloud$/i.test(url.hostname) || /^(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(url.hostname)) throw new Error("DATABASE_URL must target a public CockroachDB Cloud hostname.");
-  if (url.searchParams.get("sslmode") === "disable") throw new Error("DATABASE_URL must use secure TLS verification.");
+  if (url.searchParams.get("sslmode") !== "verify-full") throw new Error("DATABASE_URL must use secure sslmode=verify-full TLS verification.");
 }
 
 export function assertMigrationLedger(expected: readonly string[], applied: readonly string[]): void {
@@ -20,13 +20,16 @@ export function assertMigrationLedger(expected: readonly string[], applied: read
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is required; migrations refuse a local default for production use.");
+  const clusterId = process.env.COCKROACH_CLUSTER_ID;
+  if (!databaseUrl || !clusterId) throw new Error("DATABASE_URL and COCKROACH_CLUSTER_ID are required; migrations refuse a local default for production use.");
   assertCloudDatabaseUrl(databaseUrl);
   const expected = (await readdir(path.join(process.cwd(), "db/migrations"))).filter((file) => file.endsWith(".sql")).sort((left, right) => left.localeCompare(right));
   await migrate(databaseUrl);
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-production-migration-ledger" });
   await client.connect();
   try {
+    const identity = await client.query<{ cluster_id: string }>("SELECT crdb_internal.cluster_id() AS cluster_id");
+    if (identity.rows[0]?.cluster_id !== clusterId) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
     const applied = await client.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
     assertMigrationLedger(expected, applied.rows.map((row) => row.name));
   } finally { await client.end(); }

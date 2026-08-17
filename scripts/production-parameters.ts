@@ -21,14 +21,15 @@ export function assertTemplateParameterNames(templateNames: readonly string[]): 
   if (missing.length || unknown.length) throw new Error(`SAM parameter contract mismatch: missing ${missing.join(", ") || "none"}; unknown ${unknown.join(", ") || "none"}.`);
 }
 
-export function validateProductionParameters(value: unknown): ProductionParameters {
+export function validateProductionParameters(value: unknown, deploymentIdentity?: Readonly<{ accountId: string; region: string }>): ProductionParameters {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Production parameters must be a JSON object.");
   const record = value as Record<string, unknown>;
   const missing = productionParameterNames.filter((name) => typeof record[name] !== "string" || record[name].trim().length === 0);
   const unknown = Object.keys(record).filter((name) => !productionParameterNames.includes(name as (typeof productionParameterNames)[number]));
   if (missing.length || unknown.length) throw new Error(`Invalid production parameters: missing ${missing.join(", ") || "none"}; unknown ${unknown.join(", ") || "none"}.`);
   if (record.AllowedOrigin !== "https://trystash.xyz") throw new Error("AllowedOrigin must be https://trystash.xyz.");
-  if (!secretArn.test(record.DatabaseSecretArn as string) || placeholder.test(record.DatabaseSecretArn as string)) throw new Error("DatabaseSecretArn must be a non-placeholder us-east-1 Stash Secrets Manager ARN.");
+  const arn = secretArn.exec(record.DatabaseSecretArn as string);
+  if (!arn || placeholder.test(record.DatabaseSecretArn as string) || (deploymentIdentity && (deploymentIdentity.region !== "us-east-1" || deploymentIdentity.accountId !== arn[1]))) throw new Error("DatabaseSecretArn must be a non-placeholder us-east-1 Stash Secrets Manager ARN matching deployment identity.");
   if (record.BedrockModelId !== "anthropic.claude-3-5-sonnet-20241022-v2:0" || record.BedrockEmbeddingModelId !== "amazon.titan-embed-text-v2:0") throw new Error("Bedrock model IDs are not approved for this production template.");
   for (const name of ["StashSessionSecret", "StashBootstrapKey"] as const) {
     const secret = record[name] as string;
@@ -39,7 +40,10 @@ export function validateProductionParameters(value: unknown): ProductionParamete
   if (!Array.isArray(keys) || keys.length === 0) throw new Error("StashTrustedSourceKeys must include at least one trusted Ed25519 public key.");
   for (const key of keys) {
     if (!key || typeof key !== "object" || typeof (key as Record<string, unknown>).identity !== "string" || typeof (key as Record<string, unknown>).keyId !== "string" || typeof (key as Record<string, unknown>).publicKey !== "string") throw new Error("StashTrustedSourceKeys entry is invalid.");
-    try { createPublicKey({ key: Buffer.from((key as Record<string, string>).publicKey, "base64"), format: "der", type: "spki" }); } catch { throw new Error("StashTrustedSourceKeys contains an invalid public key."); }
+    try {
+      const parsed = createPublicKey({ key: Buffer.from((key as Record<string, string>).publicKey, "base64"), format: "der", type: "spki" });
+      if (parsed.asymmetricKeyType !== "ed25519") throw new Error("wrong key type");
+    } catch { throw new Error("StashTrustedSourceKeys contains an invalid Ed25519 public key."); }
   }
   return Object.fromEntries(productionParameterNames.map((name) => [name, record[name]])) as ProductionParameters;
 }

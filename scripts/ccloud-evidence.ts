@@ -5,11 +5,12 @@ import { promisify } from "node:util";
 
 import { z } from "zod";
 
-import { atomicWriteJson, redactEvidence, safeErrorMessage, validateEvidenceContext } from "./evidence-contract";
+import { atomicWriteJson, safeErrorMessage, validateEvidenceContext } from "./evidence-contract";
 
 const exec = promisify(execFile);
 
-const clusterSchema = z.object({ id: z.string().min(1), provider: z.string(), region: z.string(), plan: z.string(), state: z.string(), sqlHost: z.string().min(1) }).passthrough();
+// CLI payloads may carry additional presentation fields; only the final receipt is strict.
+const clusterSchema = z.object({ id: z.string().min(1), organizationId: z.string().min(1), provider: z.string(), region: z.string(), plan: z.string(), state: z.string(), sqlHost: z.string().min(1) }).passthrough();
 
 export function selectCloudCluster(value: unknown, expectedId: string) {
   if (!value || typeof value !== "object") throw new Error("ccloud must return structured JSON cluster output.");
@@ -22,7 +23,7 @@ export function selectCloudCluster(value: unknown, expectedId: string) {
   if (/fixture|demo|local/i.test(selected.id)) throw new Error("Fixture clusters cannot be used as production evidence.");
   if (selected.provider.toUpperCase() !== "AWS") throw new Error("CockroachDB Cloud provider must be AWS.");
   if (selected.region !== "us-east-1") throw new Error("CockroachDB Cloud region must be us-east-1.");
-  if (!/ACTIVE|READY/i.test(selected.state)) throw new Error("CockroachDB Cloud cluster is not ready.");
+  if (!["CREATED", "RUNNING", "READY"].includes(selected.state.toUpperCase())) throw new Error("CockroachDB Cloud cluster is not ready.");
   if (!/\.cockroachlabs\.cloud$/i.test(selected.sqlHost)) throw new Error("CockroachDB Cloud SQL host is invalid.");
   return selected;
 }
@@ -37,10 +38,10 @@ async function main(): Promise<void> {
   if (!output || !contextPath || !clusterId) throw new Error("Usage requires output, STASH_EVIDENCE_CONTEXT_FILE, and COCKROACH_CLUSTER_ID.");
   const context = validateEvidenceContext(JSON.parse(await readFile(contextPath, "utf8")));
   if (context.cockroach.clusterId !== clusterId) throw new Error("CockroachDB Cloud cluster does not match the evidence context.");
-  const [identity, clusters] = await Promise.all([commandJson(["auth", "whoami", "-o", "json"]), commandJson(["cluster", "list", "-o", "json"])]);
+  const [, clusters] = await Promise.all([commandJson(["auth", "whoami", "-o", "json"]), commandJson(["cluster", "list", "-o", "json"])]);
   const cluster = selectCloudCluster(clusters, clusterId);
-  if (cluster.region !== context.cockroach.region || cluster.plan.toUpperCase() !== context.cockroach.tier || cluster.sqlHost !== context.cockroach.host) throw new Error("CockroachDB Cloud resource does not match the evidence context.");
-  await atomicWriteJson(output, { ...context, kind: "ccloud", generatedAt: new Date().toISOString(), requestIds: { api: `ccloud:${cluster.id}`, trace: `ccloud:${cluster.state}` }, ccloud: redactEvidence({ identity, cluster }) });
+  if (cluster.organizationId !== context.cockroach.organizationId || cluster.region !== context.cockroach.region || cluster.plan.toUpperCase() !== context.cockroach.tier || cluster.sqlHost !== context.cockroach.host) throw new Error("CockroachDB Cloud resource does not match the evidence context.");
+  await atomicWriteJson(output, { ...context, kind: "ccloud", generatedAt: new Date().toISOString(), ccloud: { clusterId: cluster.id, organizationId: cluster.organizationId, provider: "AWS", region: cluster.region, tier: cluster.plan.toUpperCase(), host: cluster.sqlHost, state: cluster.state.toUpperCase() } });
 }
 
 const invokedAsScript = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;

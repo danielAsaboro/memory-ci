@@ -11,7 +11,7 @@ import {
 
 describe("production cloud evidence", () => {
   it("reads only named CloudWatch and X-Ray proof IDs, never an arbitrary response string", () => {
-    expect(extractCloudWatchEventId({ events: [{ logStreamName: "stream-name", message: "health", eventId: "log-event-1" }] })).toBe("log-event-1");
+    expect(extractCloudWatchEventId({ events: [{ logStreamName: "stream-name", message: JSON.stringify({ kind: "stash-api-request", requestId: "request-1", runId: "run-1" }), eventId: "log-event-1" }], }, "request-1", "run-1")).toBe("log-event-1");
     expect(extractXrayTraceId({ TraceSummaries: [{ Duration: 1, Id: "1-abcdef-trace" }] })).toBe("1-abcdef-trace");
     expect(extractCloudWatchEventId({ events: [{ logStreamName: "stream-name" }] })).toBeNull();
     expect(extractXrayTraceId({ TraceSummaries: [{ Summary: "not-a-trace-id" }] })).toBeNull();

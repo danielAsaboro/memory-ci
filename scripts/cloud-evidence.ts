@@ -68,9 +68,15 @@ async function readReceipt(path: string, label: string): Promise<Record<string, 
   try { return receiptSchema.parse(parsed); } catch { throw new Error(`${label} receipt is invalid or incomplete.`); }
 }
 
-export function extractCloudWatchEventId(value: unknown, requiredRequestId?: string): string | null {
+export function extractCloudWatchEventId(value: unknown, requiredRequestId?: string, requiredRunId?: string, requiredTraceId?: string): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
-  const event = (value as { events: unknown[] }).events.find((item) => item && typeof item === "object" && typeof (item as { eventId?: unknown }).eventId === "string" && (!requiredRequestId || typeof (item as { message?: unknown }).message === "string" && (item as { message: string }).message.includes(requiredRequestId))) as { eventId: string } | undefined;
+  const event = (value as { events: unknown[] }).events.find((item) => {
+    if (!item || typeof item !== "object" || typeof (item as { eventId?: unknown }).eventId !== "string" || typeof (item as { message?: unknown }).message !== "string") return false;
+    try {
+      const message: unknown = JSON.parse((item as { message: string }).message);
+      return Boolean(message && typeof message === "object" && (message as { kind?: unknown }).kind === "stash-api-request" && (!requiredRequestId || (message as { requestId?: unknown }).requestId === requiredRequestId) && (!requiredRunId || (message as { runId?: unknown }).runId === requiredRunId) && (!requiredTraceId || (message as { traceId?: unknown }).traceId === requiredTraceId));
+    } catch { return false; }
+  }) as { eventId: string } | undefined;
   return event?.eventId ?? null;
 }
 
@@ -94,14 +100,15 @@ async function main(): Promise<void> {
   const stackRow = Array.isArray(stack.Stacks) ? stack.Stacks[0] as Record<string, unknown> | undefined : undefined;
   const status = typeof stackRow?.StackStatus === "string" ? stackRow.StackStatus : "";
   if (status !== "CREATE_COMPLETE" && status !== "UPDATE_COMPLETE") throw new Error(`Stack ${stackName} is not complete.`);
-  const startTime = correlated.smoke.generatedAt;
+  const outputs = Object.fromEntries((Array.isArray(stackRow?.Outputs) ? stackRow.Outputs : []).flatMap((item) => item && typeof item === "object" && typeof (item as { OutputKey?: unknown }).OutputKey === "string" && typeof (item as { OutputValue?: unknown }).OutputValue === "string" ? [[(item as { OutputKey: string }).OutputKey, (item as { OutputValue: string }).OutputValue]] : []));
+  const parameters = Object.fromEntries((Array.isArray(stackRow?.Parameters) ? stackRow.Parameters : []).flatMap((item) => item && typeof item === "object" && typeof (item as { ParameterKey?: unknown }).ParameterKey === "string" && typeof (item as { ParameterValue?: unknown }).ParameterValue === "string" ? [[(item as { ParameterKey: string }).ParameterKey, (item as { ParameterValue: string }).ParameterValue]] : []));
+  if (identity.Account !== correlated.smoke.aws.accountId || stackRow?.StackId !== correlated.smoke.aws.stackId || stackRow?.StackName !== correlated.smoke.aws.stackName || outputs.ApiUrl !== correlated.smoke.aws.apiUrl || outputs.EvidenceBucketName !== correlated.smoke.aws.bucket || outputs.EventBusName !== correlated.smoke.aws.eventBus || parameters.DatabaseSecretArn !== correlated.smoke.aws.databaseSecretArn || parameters.BedrockModelId !== correlated.smoke.aws.evaluatorModelId || parameters.BedrockEmbeddingModelId !== correlated.smoke.aws.embeddingModelId) throw new Error("Independently observed CloudFormation or STS identity does not exactly match production evidence context.");
   const [logs, traces] = await Promise.all([
-    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/lambda/stash-api", "--start-time", String(Date.parse(startTime)), "--filter-pattern", correlated.smoke.requestIds.api, "--max-items", "20"], region),
-    awsJson(["xray", "get-trace-summaries", "--start-time", startTime, "--end-time", new Date().toISOString()], region),
+    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/lambda/stash-api", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", `{ $.requestId = "${correlated.smoke.requestIds.api}" && $.runId = "${correlated.smoke.runId}" }`, "--max-items", "20"], region),
+    awsJson(["xray", "batch-get-traces", "--trace-ids", correlated.smoke.requestIds.trace], region),
   ]);
-  if (identity.Account !== correlated.smoke.aws.accountId) throw new Error("STS account does not match correlated production receipts.");
-  const cloudWatch = { eventId: extractCloudWatchEventId(logs, correlated.smoke.requestIds.api) };
-  const xray = { traceId: extractXrayTraceId(traces) };
+  const cloudWatch = { eventId: extractCloudWatchEventId(logs, correlated.smoke.requestIds.api, correlated.smoke.runId, correlated.smoke.requestIds.trace) };
+  const xray = { traceId: Array.isArray(traces.Traces) && traces.Traces.some((trace) => trace && typeof trace === "object" && (trace as { Id?: unknown }).Id === correlated.smoke.requestIds.trace) ? correlated.smoke.requestIds.trace : null };
   if (!cloudWatch.eventId) throw new Error("CloudWatch result does not contain the exact smoke request ID.");
   if (!xray.traceId || xray.traceId !== correlated.smoke.requestIds.trace) throw new Error("X-Ray result does not contain the exact smoke trace ID.");
   const evidence = redactEvidence({ schemaVersion: 2, verified: true, generatedAt: new Date().toISOString(), region, stack: { name: stackName, status }, awsIdentity: { account: identity.Account, arn: identity.Arn }, smoke, vector, ccloud, cloudWatch, xray });

@@ -58,12 +58,22 @@ function requestOrigin(event: GatewayEvent): string | null {
     .get("origin");
 }
 
-async function gatewayResponse(response: Response, origin: string | null) {
+function traceRoot(): string | null {
+  const root = process.env._X_AMZN_TRACE_ID?.match(/(?:^|;)Root=([^;]+)/)?.[1];
+  return root && /^1-[0-9a-f]{8}-[0-9a-f]{24}$/i.test(root) ? root : null;
+}
+
+async function gatewayResponse(response: Response, origin: string | null, event?: GatewayEvent, requestId?: string) {
   const headers = new Headers(response.headers);
   if (origin === allowedOrigin()) {
     headers.set("access-control-allow-origin", allowedOrigin());
     headers.set("vary", "Origin");
   }
+  const runId = event ? new Headers(Object.entries(event.headers ?? {}).filter((item): item is [string, string] => typeof item[1] === "string")).get("x-stash-evidence-run-id") : null;
+  const root = traceRoot();
+  if (root) headers.set("x-amzn-trace-id", `Root=${root}`);
+  if (runId) headers.set("x-stash-evidence-run-id", runId);
+  if (requestId && runId) process.stdout.write(`${JSON.stringify({ kind: "stash-api-request", requestId, traceId: root, runId })}\n`);
   return { statusCode: response.status, headers: Object.fromEntries(headers.entries()), body: await response.text() };
 }
 
@@ -89,16 +99,16 @@ async function bootstrap(event: GatewayEvent, requestId: string) {
       roles: bootstrapped.roles,
       workspaceName: bootstrapped.workspaceName,
     });
-    return gatewayResponse(json(workspace, 201, requestId), origin);
+    return gatewayResponse(json(workspace, 201, requestId), origin, event, requestId);
   } catch (error) {
-    return gatewayResponse(errorResponse(error, requestId), origin);
+    return gatewayResponse(errorResponse(error, requestId), origin, event, requestId);
   }
 }
 
 export async function handler(event: GatewayEvent) {
   const requestId = event.requestContext?.requestId ?? crypto.randomUUID();
   const origin = requestOrigin(event);
-  if ((event.rawPath ?? event.path) === "/health") return gatewayResponse(json({ status: "ok", requestId }), origin);
+  if ((event.rawPath ?? event.path) === "/health") return gatewayResponse(json({ status: "ok", requestId }), origin, event, requestId);
   if ((event.rawPath ?? event.path) === "/v1/workspaces" && event.httpMethod === "POST") return bootstrap(event, requestId);
   try {
     const runtime = await (runtimePromise ??= createRuntime());
@@ -113,8 +123,8 @@ export async function handler(event: GatewayEvent) {
       services: runtime.services,
       requestId: crypto.randomUUID,
     });
-    return gatewayResponse(await router(toRequest(event, requestId)), origin);
+    return gatewayResponse(await router(toRequest(event, requestId)), origin, event, requestId);
   } catch (error) {
-    return gatewayResponse(errorResponse(error, requestId), origin);
+    return gatewayResponse(errorResponse(error, requestId), origin, event, requestId);
   }
 }

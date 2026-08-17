@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateEmbeddingResponse, validateHealthResponse, validateWorkspaceResponse } from "./aws-smoke";
+import { bootstrapMemoryVersionId, validateEmbeddingResponse, validateHealthResponse, validateWorkspaceResponse } from "./aws-smoke";
 
 describe("AWS production smoke parsing", () => {
   it("accepts only the live health response contract", () => {
@@ -18,5 +18,10 @@ describe("AWS production smoke parsing", () => {
     const workspace = { tenantId: "tenant-1", principalId: "principal-1", workspaceName: "Stash smoke", roles: ["admin", "reviewer"] };
     expect(validateWorkspaceResponse(workspace, workspace)).toEqual({ first: workspace, retry: workspace });
     expect(() => validateWorkspaceResponse(workspace, { ...workspace, principalId: "principal-2" })).toThrow(/persistence/i);
+  });
+
+  it("binds the smoke probe to the same deterministic bootstrap memory record", () => {
+    expect(bootstrapMemoryVersionId("bootstrap-1")).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
+    expect(bootstrapMemoryVersionId("bootstrap-1")).toBe(bootstrapMemoryVersionId("bootstrap-1"));
   });
 });

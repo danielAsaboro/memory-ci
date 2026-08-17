@@ -78,3 +78,48 @@
    ```
 
 5. Inspect the generated receipt, confirm it contains only redacted identifiers, then commit it with the tooling changes.
+
+## Fix Round 2
+
+- Replaced the permissive receipt envelope with strict, discriminated schema-v2 `aws-smoke`, `vector`, and `ccloud` receipts. Context-only receipts fail. Receipt assembly requires identical run ID, fresh timestamps, complete AWS account/region/stack/API/bucket/event-bus/secret/model context, complete CockroachDB organization/cluster/provider/region/tier/host context, and same workspace/probe/SQL-cluster/index semantics.
+- Added `evidence:context`, which builds the sole shared context from independently queried STS and CloudFormation stack data. `cloud:evidence` independently repeats those checks and exactly matches CloudFormation outputs and parameters, STS account, structured CloudWatch run/request/trace record, and the exact X-Ray root.
+- Smoke captures `startedAt` before its first request, never accepts a caller-provided trace ID, propagates a fresh run ID through the API, requires the real X-Ray root response header, invokes exact evaluator and embedding model IDs, and binds its probe to the actual deterministic bootstrap memory version. The Lambda emits the structured correlation record only for evidence-run requests.
+- Vector evidence requires the smoke receipt and queries that exact tenant/memory record; it requires `sslmode=verify-full`, authoritative SQL cluster identity, `embedding VECTOR(1024)`, the exact visible ready embedding index, and an `EXPLAIN` reference to that index. ccloud evidence parses only structured cluster JSON, requires organization/provider/region/tier/host, and accepts only exact `CREATED`, `RUNNING`, or `READY` states.
+- Production migration preflight now requires verified TLS and exact SQL cluster identity before checking the dynamically discovered migration ledger. Parameter validation now requires actual Ed25519 public keys and a Secrets Manager ARN matching the deployment identity; deploy obtains that identity without including parameter values in SAM argv or logs.
+- Expanded redaction to normalize common AWS/API/database credential key formats and credentials embedded in HTTP(S), PostgreSQL, JSON, and key/value provider errors. All receipt writes remain atomic.
+
+### Fix Round 2 local verification
+
+- Focused evidence/API/parameter/migration tests: 43 passing.
+- `npm run verify`: passed — 253 unit tests/40 files, 30 integration tests/6 files, lint, typecheck, and production build.
+- `npm run infra:validate`, `npm run infra:build`, and `npm run production:audit`: passed.
+
+### Exact post-auth receipt sequence
+
+Use a temporary directory and never print the database URL or parameter secrets. After AWS authentication is available and the authenticated CockroachDB Cloud identity facts are known:
+
+```bash
+export AWS_REGION=us-east-1 STASH_STACK_NAME=stash-production
+export COCKROACH_CLUSTER_ID='authenticated-cluster-id'
+export COCKROACH_ORGANIZATION_ID='authenticated-organization-id'
+export COCKROACH_HOST='authenticated-cluster-host.cockroachlabs.cloud'
+export COCKROACH_TIER=BASIC
+export STASH_EVIDENCE_CONTEXT_FILE=/tmp/stash-evidence-context.json
+export STASH_SMOKE_EVIDENCE_FILE=/tmp/stash-aws-smoke.json
+export STASH_VECTOR_EVIDENCE_FILE=/tmp/stash-vector-evidence.json
+export STASH_CCLOUD_EVIDENCE_FILE=/tmp/stash-ccloud-evidence.json
+npm run evidence:context -- "$STASH_EVIDENCE_CONTEXT_FILE"
+npm run ccloud:evidence -- "$STASH_CCLOUD_EVIDENCE_FILE"
+export DATABASE_URL="$(< /tmp/stash-production-database-url)"
+COCKROACH_CLUSTER_ID="$COCKROACH_CLUSTER_ID" npm run db:migrate
+export DATABASE_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Parameters[?ParameterKey=='DatabaseSecretArn'].ParameterValue" --output text)"
+export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EvidenceBucketName'].OutputValue" --output text)"
+export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
+export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+export BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
+export STASH_API_BASE_URL="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)"
+export STASH_BOOTSTRAP_KEY='retrieve-securely-without-echoing'
+npm run aws:smoke -- "$STASH_SMOKE_EVIDENCE_FILE"
+STASH_PRODUCTION_EVIDENCE=1 npm run vector:evidence -- "$STASH_VECTOR_EVIDENCE_FILE"
+npm run cloud:evidence -- docs/evidence/stash-production.json
+```

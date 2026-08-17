@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { Client } from "pg";
 
-import { atomicWriteJson, safeErrorMessage, validateEvidenceContext } from "./evidence-contract";
+import { atomicWriteJson, receiptSchema, safeErrorMessage, validateEvidenceContext } from "./evidence-contract";
 
 export function assertProductionVectorConfiguration(environment: Readonly<Record<string, string | undefined>>): void {
   if (environment.STASH_PRODUCTION_EVIDENCE !== "1") return;
@@ -13,7 +13,7 @@ export function assertProductionVectorConfiguration(environment: Readonly<Record
   let url: URL;
   try { url = new URL(databaseUrl); } catch { throw new Error("DATABASE_URL must be a CockroachDB Cloud connection URL."); }
   if (!/\.cockroachlabs\.cloud$/i.test(url.hostname) || ["localhost", "127.0.0.1", "::1"].includes(url.hostname) || /^(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(url.hostname)) throw new Error("Production vector evidence rejects local/private targets and requires a public CockroachDB Cloud hostname.");
-  if (url.searchParams.get("sslmode") === "disable") throw new Error("Production vector evidence rejects local or insecure database URLs.");
+  if (url.searchParams.get("sslmode") !== "verify-full") throw new Error("Production vector evidence requires sslmode=verify-full.");
 }
 
 async function main(): Promise<void> {
@@ -22,6 +22,11 @@ async function main(): Promise<void> {
   const contextPath = process.env.STASH_EVIDENCE_CONTEXT_FILE;
   const context = production && contextPath ? validateEvidenceContext(JSON.parse(await readFile(contextPath, "utf8"))) : null;
   if (production && !context) throw new Error("STASH_EVIDENCE_CONTEXT_FILE is required for correlated production vector evidence.");
+  const smokePath = process.env.STASH_SMOKE_EVIDENCE_FILE;
+  if (production && !smokePath) throw new Error("STASH_SMOKE_EVIDENCE_FILE is required to bind vector proof to this production run.");
+  const smoke = production ? receiptSchema.parse(JSON.parse(await readFile(smokePath!, "utf8"))) : null;
+  const smokeProbe = smoke?.kind === "aws-smoke" ? smoke.probe : null;
+  if (production && (!smokeProbe || smoke!.runId !== context!.runId)) throw new Error("Production vector evidence requires the exact correlated AWS smoke receipt.");
   const databaseUrl = process.env.DATABASE_URL ?? "postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable";
   const client = new Client({ connectionString: databaseUrl, application_name: "stash-vector-evidence" });
   await client.connect();
@@ -33,8 +38,9 @@ async function main(): Promise<void> {
       client.query<{ index_name: string; column_name: string; visible: boolean }>(
         "SELECT index_name,column_name,visible FROM [SHOW INDEX FROM memory_versions] WHERE index_name IN ('memory_versions_embedding_idx','memory_versions_active_lookup_idx') ORDER BY index_name,seq_in_index",
       ),
-      client.query<{ tenant_id: string; namespace_id: string; memory_class: string; embedding: string }>(
-        "SELECT tenant_id,namespace_id,memory_class,embedding FROM memory_versions WHERE active AND embedding IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+      client.query<{ id: string; tenant_id: string; namespace_id: string; memory_class: string; embedding: string }>(
+        production ? "SELECT id,tenant_id,namespace_id,memory_class,embedding FROM memory_versions WHERE tenant_id=$1 AND id=$2 AND active AND embedding IS NOT NULL" : "SELECT id,tenant_id,namespace_id,memory_class,embedding FROM memory_versions WHERE active AND embedding IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+        production ? [smokeProbe!.tenantId, smokeProbe!.memoryId] : [],
       ),
     ]);
     const sample = seed.rows[0];
@@ -44,7 +50,7 @@ async function main(): Promise<void> {
       ORDER BY embedding <=> $4::VECTOR LIMIT 5`;
     const explain = await client.query<Record<string, string>>(`EXPLAIN ${query}`, [sample.tenant_id, sample.namespace_id, sample.memory_class, sample.embedding]);
     const explainLines = explain.rows.map((row) => Object.values(row).join(" "));
-    const eligibleIndexes = [...new Set(indexes.rows.filter((row) => row.index_name.includes("embedding") && row.column_name === "embedding" && row.visible).map((row) => row.index_name))];
+    const eligibleIndexes = [...new Set(indexes.rows.filter((row) => row.index_name === "memory_versions_embedding_idx" && row.column_name === "embedding" && row.visible).map((row) => row.index_name))];
     const sqlClusterId = identity.rows[0]?.cluster_id;
     if (production && sqlClusterId !== process.env.COCKROACH_CLUSTER_ID) throw new Error("Authoritative CockroachDB SQL cluster identity does not match COCKROACH_CLUSTER_ID.");
     const probe = {
@@ -56,7 +62,7 @@ async function main(): Promise<void> {
       explain: explainLines,
     };
     if (production && (!probe.schemaHasVector1024 || probe.eligibleIndexes.length === 0 || probe.vectorIndexDefinitions.length !== probe.eligibleIndexes.length || !probe.explainUsesVectorIndex)) throw new Error("CockroachDB Cloud vector-index proof is incomplete.");
-    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), requestIds: { api: `sql:${sqlClusterId}`, trace: `index:${probe.eligibleIndexes[0]}` }, vector: probe } : probe;
+    const receipt = production ? { ...context!, kind: "vector", generatedAt: new Date().toISOString(), probe: { tenantId: smokeProbe!.tenantId, memoryId: smokeProbe!.memoryId, sqlClusterId }, vector: { columnType: "VECTOR(1024)", indexName: "memory_versions_embedding_idx", indexColumn: "embedding", indexType: "VECTOR", ready: probe.vectorIndexDefinitions.length === 1, visible: probe.eligibleIndexes.length === 1, explainIndexName: probe.explainUsesVectorIndex ? "memory_versions_embedding_idx" : "" } } : probe;
     const output = process.argv[2];
     if (output) await atomicWriteJson(output, receipt);
     process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);

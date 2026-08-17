@@ -76,7 +76,7 @@ Resources:
       TracingEnabled: true
       Cors:
         AllowOrigin: { Fn::Sub: "'${AllowedOrigin}'" }
-        AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id,x-stash-bootstrap-key'"
+        AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id,x-stash-bootstrap-key,x-stash-evidence-run-id'"
         AllowMethods: "'GET,POST,OPTIONS'"
       MethodSettings:
         - ResourcePath: "/*"

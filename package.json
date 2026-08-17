@@ -23,6 +23,7 @@
     "infra:validate": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 sam validate --lint --template-file infra/template.yaml",
     "infra:build": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 npm_config_cache=/private/tmp/memory-ci-npm-cache sam build --template-file infra/template.yaml",
     "aws:smoke": "tsx scripts/aws-smoke.ts",
+    "evidence:context": "tsx scripts/evidence-context.ts",
     "cloud:evidence": "tsx scripts/cloud-evidence.ts",
     "demo:seed": "tsx scripts/seed-demo.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
