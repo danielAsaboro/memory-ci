@@ -18,7 +18,7 @@ const permittedPublicEnvironmentKeys = new Set(["NEXT_PUBLIC_APP_URL"]);
 const demoCopy = /chatgpt\.site|sandbox fixture/i;
 const clientSecret = /(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|STASH_SESSION_SECRET|STASH_BOOTSTRAP_KEY|BEGIN(?: [A-Z]+)? PRIVATE KEY|(?:postgres(?:ql)?:\/\/)[^\s"']+)/i;
 
-export async function auditProduction(root = process.cwd()): Promise<ProductionAudit> {
+export async function auditProduction(root = process.cwd(), environment: NodeJS.ProcessEnv = process.env): Promise<ProductionAudit> {
   const violations: AuditViolation[] = [];
   const sourceFiles = await collectFiles(root, ["app", "src"], (path) => !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path));
   const buildFiles = await collectFiles(root, [".next/static", ".next/build-manifest.json", ".next/app-build-manifest.json", ".next/server/app-paths-manifest.json"], (path) => !path.endsWith(".map"));
@@ -41,15 +41,10 @@ export async function auditProduction(root = process.cwd()): Promise<ProductionA
     }
   }
 
-  const configuredOrigins = await environmentValues(environmentFiles, "NEXT_PUBLIC_APP_URL");
-  if (configuredOrigins.length === 0 || configuredOrigins.some(({ value }) => value !== canonicalOrigin)) {
-    add(violations, "CANONICAL_ORIGIN", root, join(root, ".env.example"), `Every NEXT_PUBLIC_APP_URL definition must equal ${canonicalOrigin}.`);
-  }
-
-  const apiEndpoints = await environmentValues(environmentFiles, "STASH_API_BASE_URL");
-  if (apiEndpoints.length === 0 || apiEndpoints.some(({ value }) => !isProductionApiEndpoint(value))) {
-    add(violations, "SERVER_API_URL", root, join(root, ".env.example"), "STASH_API_BASE_URL must be an approved production HTTPS endpoint.");
-  }
+  const documentation = await readEnvironmentFile(join(root, ".env.example"));
+  const effective = environment.NODE_ENV === "production" ? await effectiveProductionEnvironment(root, environment) : documentation;
+  if (effective.NEXT_PUBLIC_APP_URL !== canonicalOrigin) add(violations, "CANONICAL_ORIGIN", root, join(root, ".env.example"), `${environment.NODE_ENV === "production" ? "Effective production" : "Documented"} NEXT_PUBLIC_APP_URL must equal ${canonicalOrigin}.`);
+  if (!isProductionApiEndpoint(effective.STASH_API_BASE_URL)) add(violations, "SERVER_API_URL", root, join(root, ".env.example"), `${environment.NODE_ENV === "production" ? "Effective production" : "Documented"} STASH_API_BASE_URL must be an approved production HTTPS endpoint.`);
 
   for (const file of sourceMaps) {
     const contents = await readFile(file, "utf8").catch(() => "");
@@ -63,11 +58,11 @@ export async function auditProduction(root = process.cwd()): Promise<ProductionA
 
   const headerRules = await configuredHeaderRules(root);
   const requiredHeaders: Readonly<Record<string, (value: string) => boolean>> = {
-    "content-security-policy": (value) => value.includes("default-src") && !/script-src[^;]*'unsafe-inline'/.test(value),
+    "content-security-policy": isProductionContentSecurityPolicy,
     "referrer-policy": (value) => value === "strict-origin-when-cross-origin",
     "x-content-type-options": (value) => value === "nosniff",
     "permissions-policy": (value) => value.length > 0,
-    "strict-transport-security": (value) => (value.match(/max-age=(\d+)/)?.[1] ?? "0") !== "0",
+    "strict-transport-security": hasProductionHsts,
   };
   const missing = headerRules.flatMap((headers) => Object.entries(requiredHeaders).filter(([key, accepts]) => !headers.some((header) => header.key.toLowerCase() === key && accepts(header.value))).map(([key]) => key));
   if (headerRules.length === 0 || missing.length > 0) add(violations, "SECURITY_HEADERS", root, await nextConfigPath(root) ?? join(root, "next.config.ts"), `Missing or unsafe response headers: ${unique(missing.length ? missing : Object.keys(requiredHeaders)).join(", ")}.`);
@@ -101,12 +96,18 @@ async function rootEnvironmentFiles(root: string): Promise<string[]> {
   return entries.filter((entry) => entry.isFile() && [".env", ".env.example", ".env.local", ".env.production", ".env.production.local"].includes(entry.name)).map((entry) => join(root, entry.name));
 }
 
-async function environmentValues(files: readonly string[], key: string): Promise<readonly { file: string; value: string }[]> {
-  const definitions: { file: string; value: string }[] = [];
-  for (const file of files) for (const match of (await readFile(file, "utf8")).matchAll(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "gm"))) {
-    definitions.push({ file, value: match[1]!.replace(/^['"]|['"]$/g, "") });
-  }
-  return definitions;
+async function readEnvironmentFile(path: string): Promise<Record<string, string>> {
+  const values: Record<string, string> = {};
+  const contents = await readFile(path, "utf8").catch(() => "");
+  for (const match of contents.matchAll(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.+?)\s*$/gm)) values[match[1]!] = match[2]!.replace(/^['"]|['"]$/g, "");
+  return values;
+}
+
+async function effectiveProductionEnvironment(root: string, environment: NodeJS.ProcessEnv): Promise<Record<string, string | undefined>> {
+  const effective: Record<string, string | undefined> = {};
+  for (const name of [".env", ".env.production", ".env.local", ".env.production.local"]) Object.assign(effective, await readEnvironmentFile(join(root, name)));
+  for (const key of ["NEXT_PUBLIC_APP_URL", "STASH_API_BASE_URL"]) if (environment[key] !== undefined) effective[key] = environment[key];
+  return effective;
 }
 
 type Header = Readonly<{ key: string; value: string }>;
@@ -127,11 +128,31 @@ async function configuredHeaderRules(root: string): Promise<Header[][]> {
   }
 }
 
-function isProductionApiEndpoint(value: string): boolean {
+function isProductionApiEndpoint(value: string | undefined): boolean {
+  if (!value) return false;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && (url.hostname === "api.trystash.xyz" || /\.execute-api\.[a-z0-9-]+\.amazonaws\.com$/i.test(url.hostname));
   } catch { return false; }
+}
+
+function isProductionContentSecurityPolicy(value: string): boolean {
+  const directives = new Map(value.split(";").map((directive) => directive.trim()).filter(Boolean).map((directive) => {
+    const [name, ...sources] = directive.split(/\s+/);
+    return [name, sources] as const;
+  }));
+  const defaultSources = directives.get("default-src") ?? [];
+  const scriptSources = directives.get("script-src") ?? [];
+  const weakScriptSource = scriptSources.some((source) => source === "*" || /^(?:https?|data|blob):$/i.test(source) || source === "'unsafe-inline'" || source === "'unsafe-eval'");
+  return defaultSources.length === 1 && defaultSources[0] === "'self'"
+    && scriptSources.includes("'self'")
+    && scriptSources.some((source) => source === "'strict-dynamic'" || /^'nonce-[^']+'$/.test(source) || /^'sha(?:256|384|512)-[^']+'$/.test(source))
+    && !weakScriptSource;
+}
+
+function hasProductionHsts(value: string): boolean {
+  const maxAge = value.match(/(?:^|;)\s*max-age=(\d+)\s*(?:;|$)/i)?.[1];
+  return Boolean(maxAge && /^\d+$/.test(maxAge) && Number(maxAge) >= 31_536_000);
 }
 
 async function nextConfigPath(root: string): Promise<string | undefined> {

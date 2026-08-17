@@ -9,10 +9,12 @@ const securityHeaders = [
 
 export function proxy(request: NextRequest): NextResponse {
   const nonce = crypto.randomUUID().replaceAll("-", "");
+  const contentSecurityPolicy = `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://trystash.xyz`;
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("Content-Security-Policy", `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://trystash.xyz`);
+  response.headers.set("Content-Security-Policy", contentSecurityPolicy);
   for (const header of securityHeaders) response.headers.set(header.key, header.value);
   return response;
 }

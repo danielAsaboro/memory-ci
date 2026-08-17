@@ -19,7 +19,7 @@ async function fixture(files: Record<string, string>): Promise<string> {
   const safeConfig = `export default {
   async headers() {
     return [{ source: "/(.*)", headers: [
-      { key: "Content-Security-Policy", value: "default-src 'self'" },
+      { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'strict-dynamic'" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Permissions-Policy", value: "camera=()" },
@@ -78,11 +78,15 @@ describe("production audit", () => {
 
   it.each([
     ["unsafe inline scripts", "script-src 'self' 'unsafe-inline'", "max-age=63072000"],
+    ["wildcard default source", "script-src 'self'", "max-age=63072000", "default-src *"],
+    ["weak script scheme", "script-src https:", "max-age=63072000"],
     ["disabled HSTS", "script-src 'self'", "max-age=0"],
-  ])("rejects %s in the security headers", async (_label, scriptSource, hsts) => {
+    ["zero-equivalent HSTS", "script-src 'self'", "max-age=00"],
+    ["short HSTS", "script-src 'self'", "max-age=60"],
+  ])("rejects %s in the security headers", async (_label, scriptSource, hsts, defaultSource = "default-src 'self'") => {
     const result = await auditProduction(await fixture({
       "next.config.mjs": `export default { async headers() { return [{ source: "/(.*)", headers: [
-        { key: "Content-Security-Policy", value: "default-src 'self'; ${scriptSource}" },
+        { key: "Content-Security-Policy", value: "${defaultSource}; ${scriptSource}" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Permissions-Policy", value: "camera=()" },
@@ -108,8 +112,29 @@ describe("production audit", () => {
   });
 
   it("rejects a conflicting canonical origin in every production environment file", async () => {
-    const result = await auditProduction(await fixture({ ".env.production": "NEXT_PUBLIC_APP_URL=https://attacker.example\n" }));
+    const result = await auditProduction(await fixture({ ".env.production": "NEXT_PUBLIC_APP_URL=https://attacker.example\nSTASH_API_BASE_URL=https://api.trystash.xyz\n" }), { NODE_ENV: "production" });
     expect(result.violations.map((violation) => violation.ruleId)).toContain("CANONICAL_ORIGIN");
+  });
+
+  it("requires an effective production API base rather than accepting documentation alone", async () => {
+    const result = await auditProduction(await fixture({}), { NODE_ENV: "production" });
+    expect(result.violations.map((violation) => violation.ruleId)).toContain("SERVER_API_URL");
+  });
+
+  it("rejects an invalid process environment API override", async () => {
+    const result = await auditProduction(await fixture({ ".env.production": "STASH_API_BASE_URL=https://api.trystash.xyz\nNEXT_PUBLIC_APP_URL=https://trystash.xyz\n" }), {
+      NODE_ENV: "production", STASH_API_BASE_URL: "http://localhost:3000",
+    });
+    expect(result.violations.map((violation) => violation.ruleId)).toContain("SERVER_API_URL");
+  });
+
+  it("uses production-local precedence over lower-priority environment files", async () => {
+    const result = await auditProduction(await fixture({
+      ".env": "STASH_API_BASE_URL=https://api.trystash.xyz\nNEXT_PUBLIC_APP_URL=https://trystash.xyz\n",
+      ".env.production": "STASH_API_BASE_URL=https://api.trystash.xyz\nNEXT_PUBLIC_APP_URL=https://trystash.xyz\n",
+      ".env.local": "STASH_API_BASE_URL=http://localhost:3000\nNEXT_PUBLIC_APP_URL=https://attacker.example\n",
+    }), { NODE_ENV: "production" });
+    expect(result.violations.map((violation) => violation.ruleId)).toEqual(expect.arrayContaining(["SERVER_API_URL", "CANONICAL_ORIGIN"]));
   });
 
   it("rejects non-production API endpoints", async () => {
