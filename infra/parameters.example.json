@@ -1,6 +1,6 @@
 {
   "DatabaseSecretArn": "arn:aws:secretsmanager:us-east-1:000000000000:secret:stash/database-placeholder",
-  "BedrockModelId": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "BedrockModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "BedrockEmbeddingModelId": "amazon.titan-embed-text-v2:0",
   "StashSessionSecret": "replace-with-a-32-byte-server-only-session-secret",
   "StashBootstrapKey": "replace-with-a-32-byte-server-only-bootstrap-key",

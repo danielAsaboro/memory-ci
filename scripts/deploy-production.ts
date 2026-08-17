@@ -23,6 +23,13 @@ async function main(): Promise<void> {
   const child = spawn("sam", buildSamDeployArgs(parameterFile), { stdio: "inherit" });
   const code = await new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
   if (code !== 0) throw new Error("SAM production deployment failed.");
+  const described = await commandJson("aws", ["cloudformation", "describe-stacks", "--stack-name", "stash-production", "--region", "us-east-1", "--output", "json"]);
+  const stack = Array.isArray(described.Stacks) ? described.Stacks[0] : undefined;
+  const output = stack && typeof stack === "object" && Array.isArray((stack as { Outputs?: unknown }).Outputs) ? (stack as { Outputs: Array<{ OutputKey?: unknown; OutputValue?: unknown }> }).Outputs.find((item) => item.OutputKey === "BedrockLoggingRoleArn")?.OutputValue : undefined;
+  if (typeof output !== "string") throw new Error("Bedrock logging role output is unavailable.");
+  const logging = spawn("tsx", ["scripts/bedrock-logging.ts"], { stdio: "inherit", env: { ...process.env, STASH_BEDROCK_LOGGING_ROLE_ARN: output } });
+  const loggingCode = await new Promise<number | null>((resolve, reject) => { logging.on("error", reject); logging.on("close", resolve); });
+  if (loggingCode !== 0) throw new Error("Bedrock invocation logging setup failed.");
 }
 
 const invokedAsScript = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;

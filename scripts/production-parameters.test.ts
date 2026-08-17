@@ -5,7 +5,7 @@ import { assertTemplateParameterNames, buildSamDeployArgs, productionParameterNa
 describe("production SAM parameters", () => {
   const valid = {
     DatabaseSecretArn: "arn:aws:secretsmanager:us-east-1:123456789012:secret:stash/database-live",
-    BedrockModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    BedrockModelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     BedrockEmbeddingModelId: "amazon.titan-embed-text-v2:0",
     StashSessionSecret: "a-server-only-secret-with-at-least-32-bytes",
     StashBootstrapKey: "another-server-only-secret-at-least-32-bytes",

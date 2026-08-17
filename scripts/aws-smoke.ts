@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { EventBridgeClient } from "@aws-sdk/client-eventbridge";
@@ -14,6 +16,7 @@ import { assertProductionApiBaseUrl } from "./cloud-evidence";
 import { atomicWriteJson, safeErrorMessage, validateEvidenceContext } from "./evidence-contract";
 
 type WorkspaceResponse = Readonly<{ tenantId: string; principalId: string; workspaceName: string; roles: readonly string[] }>;
+const exec = promisify(execFile);
 
 export function bootstrapMemoryVersionId(idempotencyKey: string): string {
   const bytes = createHash("sha256").update(`stash-workspace-bootstrap-v1:memory-version:${idempotencyKey}`).digest().subarray(0, 16);
@@ -58,6 +61,22 @@ async function jsonRequest(url: string, init?: RequestInit): Promise<{ body: unk
   return { body, headers: response.headers };
 }
 
+function evidenceBedrockClient(region: string, runId: string): BedrockRuntimeClient {
+  const client = new BedrockRuntimeClient({ region });
+  client.middlewareStack.add((next) => async (args) => {
+    const request = args.request as { headers?: Record<string, string> };
+    if (request.headers) request.headers["x-amzn-bedrock-request-metadata"] = JSON.stringify({ runId, purpose: "stash-production-smoke" });
+    return next(args);
+  }, { step: "build", name: "stashEvidenceRequestMetadata" });
+  return client;
+}
+
+async function assertBedrockInvocationLogging(): Promise<void> {
+  const { stdout } = await exec("aws", ["bedrock", "get-model-invocation-logging-configuration", "--region", "us-east-1", "--output", "json"], { timeout: 30_000, maxBuffer: 100_000 });
+  const value: unknown = JSON.parse(stdout); const logging = value && typeof value === "object" ? (value as { loggingConfig?: { cloudWatchConfig?: { logGroupName?: unknown }; textDataDeliveryEnabled?: unknown; embeddingDataDeliveryEnabled?: unknown } }).loggingConfig : undefined;
+  if (logging?.cloudWatchConfig?.logGroupName !== "/aws/bedrock/stash-production-invocations" || logging.textDataDeliveryEnabled !== true || logging.embeddingDataDeliveryEnabled !== true) throw new Error("Stack-owned Bedrock invocation logging is not configured.");
+}
+
 async function main(): Promise<void> {
   const output = process.argv[2];
   if (!output) throw new Error("Usage: npm run aws:smoke -- <output.json>");
@@ -71,6 +90,7 @@ async function main(): Promise<void> {
   const bootstrapKey = process.env.STASH_BOOTSTRAP_KEY;
   if (!bootstrapKey) throw new Error("STASH_BOOTSTRAP_KEY is required for authenticated workspace persistence proof.");
   const startedAt = new Date().toISOString();
+  await assertBedrockInvocationLogging();
   const healthResponse = await jsonRequest(new URL("/health", apiBaseUrl).toString(), { headers: { "x-stash-evidence-run-id": context.runId } });
   const health = validateHealthResponse(healthResponse.body);
   const traceId = healthResponse.headers.get("x-amzn-trace-id")?.match(/(?:^|;)Root=([^;]+)/)?.[1];
@@ -84,10 +104,10 @@ async function main(): Promise<void> {
   const workspace = validateWorkspaceResponse((await request()).body, (await request()).body);
   const bedrock = await analyzeCandidateWithBedrock({ candidateText: "Refunds above $150 require human review.", trustClass: "authoritative", deterministicFindings: [] }, {
     modelId: config.BEDROCK_MODEL_ID, timeoutMs: config.BEDROCK_TIMEOUT_MS,
-    transport: new AwsSdkBedrockTransport(new BedrockRuntimeClient({ region: config.AWS_REGION })),
+    transport: new AwsSdkBedrockTransport(evidenceBedrockClient(config.AWS_REGION, context.runId)),
   });
   if (bedrock.status !== "complete" || !bedrock.providerRequestId) throw new Error("Bedrock smoke did not produce an authenticated provider request ID.");
-  const embeddingResponse = await new BedrockRuntimeClient({ region: config.AWS_REGION }).send(new InvokeModelCommand({
+  const embeddingResponse = await evidenceBedrockClient(config.AWS_REGION, context.runId).send(new InvokeModelCommand({
     modelId: embeddingModelId, contentType: "application/json", accept: "application/json",
     body: JSON.stringify({ inputText: "stash production evidence probe" }),
   }));

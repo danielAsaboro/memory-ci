@@ -104,6 +104,18 @@ export function extractObservedTraceId(value: unknown, traceId: string, startedA
   return trace ? traceId : null;
 }
 
+export function hasObservedBedrockInvocation(value: unknown, smoke: { aws: { accountId: string; region: string }; runId: string; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string } } }): boolean {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return false;
+  const required = [smoke.bedrock.evaluator, smoke.bedrock.embedding];
+  return required.every((expected) => (value as { events: unknown[] }).events.some((event) => {
+    try {
+      const record: unknown = JSON.parse((event as { message: string }).message); const item = record as { schemaType?: unknown; schemaVersion?: unknown; accountId?: unknown; region?: unknown; operation?: unknown; modelId?: unknown; requestId?: unknown; requestMetadata?: unknown };
+      const metadata = item.requestMetadata as Record<string, unknown> | undefined;
+      return item.schemaType === "ModelInvocationLog" && item.schemaVersion === "1.0" && item.accountId === smoke.aws.accountId && item.region === smoke.aws.region && item.operation === "InvokeModel" && item.modelId === expected.modelId && item.requestId === expected.providerRequestId && metadata?.runId === smoke.runId && metadata?.purpose === "stash-production-smoke";
+    } catch { return false; }
+  }));
+}
+
 export function validateObservedArtifact(head: { VersionId?: string; Metadata?: Record<string, string>; ETag?: string }, body: Uint8Array, smoke: { runId: string; s3: { versionId: string; digest: string } }): { etag: string } {
   const digest = createHash("sha256").update(body).digest("hex");
   if (!head.ETag || head.VersionId !== smoke.s3.versionId || head.Metadata?.["content-sha256"] !== smoke.s3.digest || digest !== smoke.s3.digest) throw new Error("S3 observation does not exactly match the versioned smoke artifact.");
@@ -111,16 +123,18 @@ export function validateObservedArtifact(head: { VersionId?: string; Metadata?: 
   return { etag: head.ETag };
 }
 
-export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
+export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; aws: { accountId: string; region: string }; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
   const match = (value as { events: unknown[] }).events.find((event) => {
     if (!event || typeof event !== "object" || typeof (event as { eventId?: unknown }).eventId !== "string" || typeof (event as { message?: unknown }).message !== "string") return false;
     try {
       const envelope: unknown = JSON.parse((event as { message: string }).message);
-      const detail = envelope && typeof envelope === "object" && typeof (envelope as { detail?: unknown }).detail === "object" ? (envelope as { detail: { payload?: unknown; eventId?: unknown } }).detail : null;
+      const record = envelope as { id?: unknown; source?: unknown; "detail-type"?: unknown; account?: unknown; region?: unknown; time?: unknown; detail?: unknown };
+      if (record.id !== smoke.eventBridge.eventId || record.source !== "memory-ci" || record["detail-type"] !== "stash.cloud_smoke" || record.account !== smoke.aws.accountId || record.region !== smoke.aws.region || typeof record.time !== "string") return false;
+      const detail = envelope && typeof envelope === "object" && typeof record.detail === "object" ? record.detail as { payload?: unknown } : null;
       const payload = detail?.payload as Record<string, unknown> | undefined;
       const evaluator = payload?.evaluator as Record<string, unknown> | undefined; const embedding = payload?.embedding as Record<string, unknown> | undefined;
-      return detail?.eventId === smoke.eventBridge.eventId && payload?.runId === smoke.runId && evaluator?.modelId === smoke.bedrock.evaluator.modelId && evaluator?.providerRequestId === smoke.bedrock.evaluator.providerRequestId && embedding?.modelId === smoke.bedrock.embedding.modelId && embedding?.providerRequestId === smoke.bedrock.embedding.providerRequestId && embedding?.dimensions === 1024;
+      return payload?.runId === smoke.runId && evaluator?.modelId === smoke.bedrock.evaluator.modelId && evaluator?.providerRequestId === smoke.bedrock.evaluator.providerRequestId && embedding?.modelId === smoke.bedrock.embedding.modelId && embedding?.providerRequestId === smoke.bedrock.embedding.providerRequestId && embedding?.dimensions === 1024;
     } catch { return false; }
   }) as { eventId: string } | undefined;
   return match?.eventId ?? null;
@@ -148,10 +162,11 @@ async function main(): Promise<void> {
     awsJson(["xray", "batch-get-traces", "--trace-ids", correlated.smoke.requestIds.trace], region),
   ]);
   const s3 = new S3Client({ region });
-  const [head, object, serviceEvents] = await Promise.all([
+  const [head, object, serviceEvents, bedrockLogs] = await Promise.all([
     s3.send(new HeadObjectCommand({ Bucket: correlated.smoke.aws.bucket, Key: correlated.smoke.s3.key, VersionId: correlated.smoke.s3.versionId })),
     s3.send(new GetObjectCommand({ Bucket: correlated.smoke.aws.bucket, Key: correlated.smoke.s3.key, VersionId: correlated.smoke.s3.versionId })),
     awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/events/stash-production-observations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", correlated.smoke.runId, "--max-items", "20"], region),
+    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/bedrock/stash-production-invocations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", correlated.smoke.runId, "--max-items", "50"], region),
   ]);
   if (!object.Body) throw new Error("S3 observation returned no artifact body.");
   const observedArtifact = validateObservedArtifact(head, await object.Body.transformToByteArray(), correlated.smoke);
@@ -161,6 +176,7 @@ async function main(): Promise<void> {
   if (!xray.traceId || xray.traceId !== correlated.smoke.requestIds.trace) throw new Error("X-Ray result does not contain the exact smoke trace ID.");
   const serviceEventId = extractObservedServiceEvent(serviceEvents, correlated.smoke);
   if (!serviceEventId) throw new Error("Stack-owned EventBridge observation does not exactly match event and Bedrock provider proofs.");
+  if (!hasObservedBedrockInvocation(bedrockLogs, correlated.smoke)) throw new Error("Bedrock-owned invocation logs do not exactly match both smoke provider requests.");
   const evidence = redactEvidence({ schemaVersion: 2, verified: true, generatedAt: new Date().toISOString(), region, stack: { name: stackName, status }, awsIdentity: { account: identity.Account, arn: identity.Arn }, smoke, vector, ccloud, cloudWatch, xray, s3: observedArtifact, serviceEventId });
   await atomicWriteJson(output, evidence);
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);

@@ -18,7 +18,7 @@ const awsSchema = z.object({
   apiUrl: z.string().url().regex(/^https:\/\/(?:[a-z0-9-]+\.execute-api\.us-east-1\.amazonaws\.com|api\.trystash\.xyz)\//i),
   bucket: z.string().min(3), eventBus: z.literal("stash"),
   databaseSecretArn: z.string().regex(/^arn:aws:secretsmanager:us-east-1:\d{12}:secret:stash\//),
-  evaluatorModelId: z.literal("anthropic.claude-3-5-sonnet-20241022-v2:0"), embeddingModelId: z.literal("amazon.titan-embed-text-v2:0"),
+  evaluatorModelId: z.literal("us.anthropic.claude-haiku-4-5-20251001-v1:0"), embeddingModelId: z.literal("amazon.titan-embed-text-v2:0"),
 }).strict();
 const cockroachSchema = z.object({
   clusterId: z.string().min(1).refine((value) => !/fixture|demo|local/i.test(value)), organizationId: z.string().min(1), region: z.literal("us-east-1"),
@@ -34,7 +34,7 @@ const smokeReceiptSchema = evidenceContextBaseSchema.extend({
   kind: z.literal("aws-smoke"), startedAt: z.string().datetime(), requestIds: z.object({ api: z.string().min(1), trace: z.string().min(1) }).strict(),
   health: z.object({ status: z.literal("ok"), requestId: z.string().min(1) }).strict(),
   workspace: z.object({ first: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1), roles: z.array(z.string().min(1)).min(1) }).strict(), retry: z.object({ tenantId: z.string().min(1), principalId: z.string().min(1), workspaceName: z.string().min(1), roles: z.array(z.string().min(1)).min(1) }).strict() }).strict(),
-  bedrock: z.object({ evaluator: z.object({ modelId: z.literal("anthropic.claude-3-5-sonnet-20241022-v2:0"), providerRequestId: z.string().min(1) }).strict(), embedding: z.object({ modelId: z.literal("amazon.titan-embed-text-v2:0"), providerRequestId: z.string().min(1), dimensions: z.literal(1024), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict() }).strict(),
+  bedrock: z.object({ evaluator: z.object({ modelId: z.literal("us.anthropic.claude-haiku-4-5-20251001-v1:0"), providerRequestId: z.string().min(1) }).strict(), embedding: z.object({ modelId: z.literal("amazon.titan-embed-text-v2:0"), providerRequestId: z.string().min(1), dimensions: z.literal(1024), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict() }).strict(),
   s3: z.object({ providerRequestId: z.string().min(1), versionId: z.string().min(1), key: z.string().regex(/^artifacts\//), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(), eventBridge: z.object({ providerRequestId: z.string().min(1), eventId: z.string().min(1) }).strict(), probe: z.object({ tenantId: z.string().min(1), memoryId: z.string().min(1) }).strict(),
 }).strict();
 const vectorReceiptSchema = evidenceContextBaseSchema.extend({

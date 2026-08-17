@@ -8,7 +8,7 @@ Parameters:
     Description: ARN of the Secrets Manager secret containing the CockroachDB connection URL.
   BedrockModelId:
     Type: String
-    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
   BedrockEmbeddingModelId:
     Type: String
     Default: amazon.titan-embed-text-v2:0
@@ -111,6 +111,22 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties: { LogGroupName: /aws/events/stash-production-observations, RetentionInDays: 30 }
+  BedrockInvocationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: { LogGroupName: /aws/bedrock/stash-production-invocations, RetentionInDays: 30 }
+  BedrockLoggingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: bedrock.amazonaws.com }, Action: ["sts:AssumeRole"] }]
+      Policies:
+        - PolicyName: stash-bedrock-invocation-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: [{ Effect: Allow, Action: ["logs:CreateLogStream", "logs:PutLogEvents"], Resource: { Fn::Sub: "${BedrockInvocationLogGroup.Arn}:*" } }]
   EvidenceObservationLogPolicy:
     Type: AWS::Logs::ResourcePolicy
     Properties:
@@ -156,7 +172,9 @@ Resources:
               - Effect: Allow
                 Action: ["bedrock:InvokeModel"]
                 Resource:
-                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
                   - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}" }
   OutboxRole:
     Type: AWS::IAM::Role
@@ -299,5 +317,6 @@ Outputs:
   ApiUrl: { Value: { Fn::Sub: "https://${MemoryApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/v1" } }
   EvidenceBucketName: { Value: { Ref: EvidenceBucket } }
   EventBusName: { Value: { Ref: MemoryEventBus } }
+  BedrockLoggingRoleArn: { Value: { Fn::GetAtt: [BedrockLoggingRole, Arn] } }
   UserPoolId: { Value: { Ref: ReviewerUserPool } }
   UserPoolClientId: { Value: { Ref: ReviewerUserPoolClient } }

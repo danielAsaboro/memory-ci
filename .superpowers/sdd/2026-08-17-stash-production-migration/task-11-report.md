@@ -141,3 +141,13 @@ npm run cloud:evidence -- docs/evidence/stash-production.json
 ### Updated post-auth note
 
 Deploy the R3 SAM update before collecting evidence so the EventBridge observation rule/log group exists. Then use the same R2 sequence; `cloud:evidence` will now require the observed S3 object and `/aws/events/stash-production-observations` delivery record before it writes a final receipt.
+
+## Fix Round 4
+
+- Corrected EventBridge observation parsing to require the real AWS-delivered envelope top-level `id`, source, detail type, account, and region; old synthetic nested `detail.eventId` receipts are rejected.
+- Added stack-owned Bedrock model invocation log group and delivery role. Deployment configures and verifies Bedrock invocation logging through the documented `PutModelInvocationLoggingConfiguration`/`GetModelInvocationLoggingConfiguration` API, while smoke preflights the same configuration. Smoke sends documented `X-Amzn-Bedrock-Request-Metadata` run/purpose tags on both `InvokeModel` calls; final evidence requires both Bedrock-owned `ModelInvocationLog` records rather than EventBridge echoes.
+- Replaced the EOL evaluator with the verified `us.anthropic.claude-haiku-4-5-20251001-v1:0` US inference profile. Parameter/schema/examples now require it. API IAM grants the profile ARN plus the required us-east-1/us-west-2 underlying foundation-model ARNs; Titan v2 embedding is unchanged.
+
+### Fix Round 4 local verification
+
+- Focused evidence/parameter/smoke tests, typecheck, lint, and SAM validation passed before commit. No AWS live invocation, deployment, or evidence success claim was made.

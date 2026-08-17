@@ -30,7 +30,7 @@ export function validateProductionParameters(value: unknown, deploymentIdentity?
   if (record.AllowedOrigin !== "https://trystash.xyz") throw new Error("AllowedOrigin must be https://trystash.xyz.");
   const arn = secretArn.exec(record.DatabaseSecretArn as string);
   if (!arn || placeholder.test(record.DatabaseSecretArn as string) || (deploymentIdentity && (deploymentIdentity.region !== "us-east-1" || deploymentIdentity.accountId !== arn[1]))) throw new Error("DatabaseSecretArn must be a non-placeholder us-east-1 Stash Secrets Manager ARN matching deployment identity.");
-  if (record.BedrockModelId !== "anthropic.claude-3-5-sonnet-20241022-v2:0" || record.BedrockEmbeddingModelId !== "amazon.titan-embed-text-v2:0") throw new Error("Bedrock model IDs are not approved for this production template.");
+  if (record.BedrockModelId !== "us.anthropic.claude-haiku-4-5-20251001-v1:0" || record.BedrockEmbeddingModelId !== "amazon.titan-embed-text-v2:0") throw new Error("Bedrock model IDs are not approved for this production template.");
   for (const name of ["StashSessionSecret", "StashBootstrapKey"] as const) {
     const secret = record[name] as string;
     if (secret.length < 32 || placeholder.test(secret)) throw new Error(`${name} must contain a non-placeholder value of at least 32 bytes.`);

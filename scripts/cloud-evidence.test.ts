@@ -84,8 +84,9 @@ describe("production cloud evidence", () => {
     const body = Buffer.from(JSON.stringify({ runId: "run-1" })); const digest = createHash("sha256").update(body).digest("hex");
     expect(validateObservedArtifact({ ETag: "etag", VersionId: "v1", Metadata: { "content-sha256": digest } }, body, { runId: "run-1", s3: { versionId: "v1", digest } })).toEqual({ etag: "etag" });
     expect(() => validateObservedArtifact({ ETag: "etag", VersionId: "v1", Metadata: { "content-sha256": digest } }, Buffer.from("{}"), { runId: "run-1", s3: { versionId: "v1", digest } })).toThrow(/S3/i);
-    const smoke = { runId: "run-1", eventBridge: { eventId: "event-1" }, bedrock: { evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } };
-    expect(extractObservedServiceEvent({ events: [{ eventId: "log-1", message: JSON.stringify({ detail: { eventId: "event-1", payload: { runId: "run-1", evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } } }) }] }, smoke)).toBe("log-1");
+    const smoke = { runId: "run-1", aws: { accountId: "123456789012", region: "us-east-1" }, eventBridge: { eventId: "event-1" }, bedrock: { evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } };
+    const envelope = { id: "event-1", source: "memory-ci", "detail-type": "stash.cloud_smoke", account: "123456789012", region: "us-east-1", time: new Date().toISOString(), detail: { payload: { runId: "run-1", evaluator: { modelId: "eval", providerRequestId: "eval-1" }, embedding: { modelId: "embed", providerRequestId: "embed-1", dimensions: 1024 } } } };
+    expect(extractObservedServiceEvent({ events: [{ eventId: "log-1", message: JSON.stringify(envelope) }] }, smoke)).toBe("log-1");
     expect(extractObservedServiceEvent({ events: [{ eventId: "log-1", message: JSON.stringify({ detail: { eventId: "event-1", payload: { runId: "different" } } }) }] }, smoke)).toBeNull();
   });
 
