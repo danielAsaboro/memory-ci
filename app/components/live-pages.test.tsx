@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -123,7 +123,11 @@ describe("live product pages", () => {
     installResponses({ [`/api/stash/v1/memory/${memory.id}`]: new Response(JSON.stringify({ ...memory, lineage: [memory] }), { headers: { "content-type": "application/json" } }) });
     const { unmount } = render(<LiveProvider><MemoryDetailPage /></LiveProvider>);
     expect(await screen.findByRole("heading", { name: memory.stableKey })).toBeInTheDocument();
-    expect(screen.getByText("Version 9")).toBeInTheDocument();
+    const lineage = screen.getByRole("list");
+    expect(within(lineage).getByText("Version 9")).toBeInTheDocument();
+    expect(within(lineage).getByText("Arbitrary memory payload")).toBeInTheDocument();
+    expect(within(lineage).getByText(/revision 44.*2026-08-17T10:00:00.000Z/)).toBeInTheDocument();
+    expect(screen.queryByText("No lineage is available")).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(`/api/stash/v1/memory/${memory.id}`, { cache: "no-store", method: "GET" });
     unmount();
     installResponses({ [`/api/stash/v1/memory/${memory.id}`]: new Response(JSON.stringify({ ...memory, lineage: [] }), { headers: { "content-type": "application/json" } }) });
