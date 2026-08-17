@@ -10,10 +10,28 @@ import {
   validateObservedArtifact,
   extractObservedServiceEvent,
   extractObservedTraceId,
+  exactCloudWatchTerm,
+  hasObservedBedrockInvocation,
 } from "./cloud-evidence";
 import { createHash } from "node:crypto";
 
 describe("production cloud evidence", () => {
+  it("quotes exact CloudWatch terms so UUID punctuation is matched literally", () => {
+    expect(exactCloudWatchTerm("66370567-8802-45c1-8b47-6d6f9d42e1ab")).toBe('"66370567-8802-45c1-8b47-6d6f9d42e1ab"');
+    expect(() => exactCloudWatchTerm('unsafe"term')).toThrow(/safe identifier/i);
+  });
+
+  it("correlates Converse evaluator logs by provider request and InvokeModel embeddings by signed metadata", () => {
+    const smoke = { aws: { accountId: "123456789012", region: "us-east-1" }, runId: "run-1", startedAt: "2026-08-17T17:00:00.000Z", generatedAt: "2026-08-17T17:01:00.000Z", bedrock: { evaluator: { modelId: "evaluator", providerRequestId: "eval-request" }, embedding: { modelId: "embedding", providerRequestId: "embed-request" } } };
+    const base = { schemaType: "ModelInvocationLog", schemaVersion: "1.0", timestamp: "2026-08-17T17:00:30.000Z", accountId: "123456789012", region: "us-east-1" };
+    const logs = { events: [
+      { logStreamName: "aws/bedrock/modelinvocations", message: JSON.stringify({ ...base, operation: "Converse", modelId: "evaluator", requestId: "eval-request" }) },
+      { logStreamName: "aws/bedrock/modelinvocations", message: JSON.stringify({ ...base, operation: "InvokeModel", modelId: "embedding", requestId: "embed-request", requestMetadata: { runId: "run-1", purpose: "stash-production-smoke" } }) },
+    ] };
+    expect(hasObservedBedrockInvocation(logs, smoke)).toBe(true);
+    expect(hasObservedBedrockInvocation({ events: logs.events.slice(0, 1) }, smoke)).toBe(false);
+  });
+
   it("reads only named CloudWatch and X-Ray proof IDs, never an arbitrary response string", () => {
     expect(extractCloudWatchEventId({ events: [{ logStreamName: "stream-name", message: JSON.stringify({ kind: "stash-api-request", requestId: "request-1", runId: "run-1" }), eventId: "log-event-1" }], }, "request-1", "run-1")).toBe("log-event-1");
     expect(extractXrayTraceId({ TraceSummaries: [{ Duration: 1, Id: "1-abcdef-trace" }] })).toBe("1-abcdef-trace");

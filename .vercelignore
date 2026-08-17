@@ -1,0 +1,9 @@
+.aws-sam
+.sam-cli
+coverage
+playwright-report
+test-results
+videos
+infra/parameters.production.json
+.env*
+!.env.example

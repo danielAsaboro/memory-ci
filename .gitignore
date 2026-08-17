@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# vercel
+# Vercel CLI linkage and generated output (project configuration lives in vercel.json)
 .vercel
 
 /dist/

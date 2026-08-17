@@ -98,7 +98,18 @@ describe("CockroachDB migrations", () => {
     expect(applied.rows.map((row) => row.name)).toEqual([
       "001_initial.sql", "002_vector_indexes.sql", "003_security_roles.sql",
       "004_active_lookup_covering_index.sql", "005_workspace_sessions.sql", "006_tenant_bound_workspace_bootstraps.sql", "007_lifecycle_idempotency.sql", "008_evaluation_replay_and_suite_results.sql", "009_source_signature_evidence.sql", "010_trusted_source_signature_evidence.sql", "011_harden_legacy_elevated_provenance.sql",
+      "012_active_memory_vector_index.sql", "013_workspace_evaluation_scenario.sql",
     ]);
+  });
+
+  it("creates a vector index whose prefixes match active memory retrieval", async () => {
+    await migrate(databaseUrl);
+    const columns = await database.query<{ column_name: string }>(
+      `SELECT column_name FROM [SHOW INDEX FROM memory_versions]
+       WHERE index_name='memory_versions_active_embedding_idx' AND implicit=false AND storing=false
+       ORDER BY seq_in_index`,
+    );
+    expect(columns.rows.map((row) => row.column_name)).toEqual(["tenant_id", "namespace_id", "active", "embedding"]);
   });
 
   it("keys workspace bootstrap idempotency by tenant and key", async () => {

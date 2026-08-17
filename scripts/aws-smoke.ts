@@ -26,6 +26,14 @@ export function bootstrapMemoryVersionId(idempotencyKey: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function workspaceBootstrapUrl(apiBaseUrl: string): string {
+  return `${apiBaseUrl.replace(/\/$/, "")}/v1/workspaces`;
+}
+
+export function healthProbeUrl(apiBaseUrl: string): string {
+  return `${apiBaseUrl.replace(/\/$/, "")}/health`;
+}
+
 export function validateHealthResponse(value: unknown): { status: "ok"; requestId: string } {
   if (!value || typeof value !== "object" || (value as { status?: unknown }).status !== "ok" || typeof (value as { requestId?: unknown }).requestId !== "string") {
     throw new Error("Production health response is missing status=ok or a request ID.");
@@ -93,14 +101,14 @@ async function main(): Promise<void> {
   if (!bootstrapKey) throw new Error("STASH_BOOTSTRAP_KEY is required for authenticated workspace persistence proof.");
   const startedAt = new Date().toISOString();
   await assertBedrockInvocationLogging();
-  const healthResponse = await jsonRequest(new URL("/health", apiBaseUrl).toString(), { headers: { "x-stash-evidence-run-id": context.runId } });
+  const healthResponse = await jsonRequest(healthProbeUrl(apiBaseUrl), { headers: { "x-stash-evidence-run-id": context.runId } });
   const health = validateHealthResponse(healthResponse.body);
   const traceId = healthResponse.headers.get("x-amzn-trace-id")?.match(/(?:^|;)Root=([^;]+)/)?.[1];
   if (!traceId) throw new Error("Health response did not propagate a real X-Amzn-Trace-Id Root value.");
   if (healthResponse.headers.get("x-stash-evidence-run-id") !== context.runId) throw new Error("Health response did not propagate the exact evidence run ID.");
   const idempotencyKey = `cloud-smoke-${randomUUID()}`;
   const workspaceInput = JSON.stringify({ displayName: "Stash production smoke" });
-  const request = () => jsonRequest(new URL("workspaces", `${apiBaseUrl}/`).toString(), {
+  const request = () => jsonRequest(workspaceBootstrapUrl(apiBaseUrl), {
     method: "POST", headers: { "content-type": "application/json", "idempotency-key": idempotencyKey, "x-stash-bootstrap-key": bootstrapKey, "x-stash-evidence-run-id": context.runId }, body: workspaceInput,
   });
   const workspace = validateWorkspaceResponse((await request()).body, (await request()).body);

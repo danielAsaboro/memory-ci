@@ -71,6 +71,11 @@ async function readReceipt(path: string, label: string): Promise<Record<string, 
   try { return receiptSchema.parse(parsed); } catch { throw new Error(`${label} receipt is invalid or incomplete.`); }
 }
 
+export function exactCloudWatchTerm(value: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("CloudWatch evidence filters require a safe identifier.");
+  return `"${value}"`;
+}
+
 export function extractCloudWatchEventId(value: unknown, requiredRequestId?: string, requiredRunId?: string, requiredTraceId?: string, startedAt?: string, generatedAt?: string): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
   const event = (value as { events: unknown[] }).events.find((item) => {
@@ -106,13 +111,17 @@ export function extractObservedTraceId(value: unknown, traceId: string, startedA
 
 export function hasObservedBedrockInvocation(value: unknown, smoke: { aws: { accountId: string; region: string }; runId: string; startedAt: string; generatedAt: string; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string } } }): boolean {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return false;
-  const required = [smoke.bedrock.evaluator, smoke.bedrock.embedding];
+  const required = [
+    { ...smoke.bedrock.evaluator, operation: "Converse", requiresMetadata: false },
+    { ...smoke.bedrock.embedding, operation: "InvokeModel", requiresMetadata: true },
+  ];
   return required.every((expected) => (value as { events: unknown[] }).events.some((event) => {
     try {
       const record: unknown = JSON.parse((event as { message: string }).message); const item = record as { schemaType?: unknown; schemaVersion?: unknown; timestamp?: unknown; accountId?: unknown; region?: unknown; operation?: unknown; modelId?: unknown; requestId?: unknown; requestMetadata?: unknown };
       const metadata = item.requestMetadata as Record<string, unknown> | undefined;
       const timestamp = typeof item.timestamp === "string" ? Date.parse(item.timestamp) : NaN;
-      return (event as { logStreamName?: unknown }).logStreamName === "aws/bedrock/modelinvocations" && item.schemaType === "ModelInvocationLog" && item.schemaVersion === "1.0" && Number.isFinite(timestamp) && timestamp >= Date.parse(smoke.startedAt) && timestamp <= Date.parse(smoke.generatedAt) + 120_000 && item.accountId === smoke.aws.accountId && item.region === smoke.aws.region && item.operation === "InvokeModel" && item.modelId === expected.modelId && item.requestId === expected.providerRequestId && metadata?.runId === smoke.runId && metadata?.purpose === "stash-production-smoke";
+      const metadataMatches = !expected.requiresMetadata || (metadata?.runId === smoke.runId && metadata?.purpose === "stash-production-smoke");
+      return (event as { logStreamName?: unknown }).logStreamName === "aws/bedrock/modelinvocations" && item.schemaType === "ModelInvocationLog" && item.schemaVersion === "1.0" && Number.isFinite(timestamp) && timestamp >= Date.parse(smoke.startedAt) && timestamp <= Date.parse(smoke.generatedAt) + 120_000 && item.accountId === smoke.aws.accountId && item.region === smoke.aws.region && item.operation === expected.operation && item.modelId === expected.modelId && item.requestId === expected.providerRequestId && metadataMatches;
     } catch { return false; }
   }));
 }
@@ -172,8 +181,8 @@ async function main(): Promise<void> {
   const [head, object, serviceEvents, bedrockLogs] = await Promise.all([
     s3.send(new HeadObjectCommand({ Bucket: correlated.smoke.aws.bucket, Key: correlated.smoke.s3.key, VersionId: correlated.smoke.s3.versionId })),
     s3.send(new GetObjectCommand({ Bucket: correlated.smoke.aws.bucket, Key: correlated.smoke.s3.key, VersionId: correlated.smoke.s3.versionId })),
-    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/events/stash-production-observations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", correlated.smoke.runId, "--max-items", "20"], region),
-    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/bedrock/stash-production-invocations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", correlated.smoke.runId, "--max-items", "50"], region),
+    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/events/stash-production-observations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--filter-pattern", exactCloudWatchTerm(correlated.smoke.runId), "--max-items", "20"], region),
+    awsJson(["logs", "filter-log-events", "--log-group-name", "/aws/bedrock/stash-production-invocations", "--start-time", String(Date.parse(correlated.smoke.startedAt)), "--max-items", "50"], region),
   ]);
   if (!object.Body) throw new Error("S3 observation returned no artifact body.");
   const observedArtifact = validateObservedArtifact(head, await object.Body.transformToByteArray(), correlated.smoke);

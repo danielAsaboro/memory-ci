@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bootstrapMemoryVersionId, validateEmbeddingResponse, validateHealthResponse, validateWorkspaceResponse } from "./aws-smoke";
+import { bootstrapMemoryVersionId, healthProbeUrl, validateEmbeddingResponse, validateHealthResponse, validateWorkspaceResponse, workspaceBootstrapUrl } from "./aws-smoke";
 
 describe("AWS production smoke parsing", () => {
   it("accepts only the live health response contract", () => {
@@ -23,5 +23,10 @@ describe("AWS production smoke parsing", () => {
   it("binds the smoke probe to the same deterministic bootstrap memory record", () => {
     expect(bootstrapMemoryVersionId("bootstrap-1")).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
     expect(bootstrapMemoryVersionId("bootstrap-1")).toBe(bootstrapMemoryVersionId("bootstrap-1"));
+  });
+
+  it("keeps the API Gateway stage and appends the versioned workspace route", () => {
+    expect(healthProbeUrl("https://abc.execute-api.us-east-1.amazonaws.com/v1")).toBe("https://abc.execute-api.us-east-1.amazonaws.com/v1/health");
+    expect(workspaceBootstrapUrl("https://abc.execute-api.us-east-1.amazonaws.com/v1")).toBe("https://abc.execute-api.us-east-1.amazonaws.com/v1/v1/workspaces");
   });
 });

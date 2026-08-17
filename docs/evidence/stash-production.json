@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 2,
+  "verified": true,
+  "generatedAt": "2026-08-17T18:38:41.216Z",
+  "region": "us-east-1",
+  "stack": {
+    "name": "stash-production",
+    "status": "UPDATE_COMPLETE"
+  },
+  "awsIdentity": {
+    "account": "[redacted-account]",
+    "arn": "arn:aws:iam::[redacted-account]:root"
+  },
+  "smoke": {
+    "schemaVersion": 2,
+    "runId": "d43701da-49a9-4ed9-967d-485c125b70c9",
+    "generatedAt": "2026-08-17T18:33:11.685Z",
+    "aws": {
+      "accountId": "[redacted-account]",
+      "region": "us-east-1",
+      "stackName": "stash-production",
+      "stackId": "arn:aws:cloudformation:us-east-1:[redacted-account]:stack/stash-production/437a3460-9a66-11f1-b39d-0e687ba035b3",
+      "apiUrl": "https://mltyzpfzqb.execute-api.us-east-1.amazonaws.com/v1",
+      "bucket": "stash-production-evidencebucket-nayneqt0dvoa",
+      "eventBus": "stash",
+      "databaseSecretArn": "[redacted]",
+      "evaluatorModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "embeddingModelId": "amazon.titan-embed-text-v2:0"
+    },
+    "cockroach": {
+      "clusterId": "283b3b90-fd4c-41d4-92ed-8adac243ca15",
+      "sqlClusterId": "9fad7a1e-e440-4989-3818-bc191b76705e",
+      "organizationId": "2039bcda-6470-4d1c-a812-b06890e7a690",
+      "region": "us-east-1",
+      "tier": "BASIC",
+      "host": "stash-prod-32228.j77.aws-us-east-1.cockroachlabs.cloud"
+    },
+    "kind": "aws-smoke",
+    "startedAt": "2026-08-17T18:33:00.920Z",
+    "requestIds": {
+      "api": "16e0ca7b-0f26-4db8-8fef-823f125f9131",
+      "trace": "1-6a8353df-031a33b47aeea62342f19ce8"
+    },
+    "health": {
+      "status": "ok",
+      "requestId": "16e0ca7b-0f26-4db8-8fef-823f125f9131"
+    },
+    "workspace": {
+      "first": {
+        "tenantId": "d7cb8d2f-0993-52a5-a02a-a353d0254f5d",
+        "principalId": "59bdb700-cd84-58c2-9148-2dce4ac6775b",
+        "workspaceName": "Stash production smoke",
+        "roles": [
+          "admin",
+          "reviewer"
+        ]
+      },
+      "retry": {
+        "tenantId": "d7cb8d2f-0993-52a5-a02a-a353d0254f5d",
+        "principalId": "59bdb700-cd84-58c2-9148-2dce4ac6775b",
+        "workspaceName": "Stash production smoke",
+        "roles": [
+          "admin",
+          "reviewer"
+        ]
+      }
+    },
+    "bedrock": {
+      "evaluator": {
+        "modelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "providerRequestId": "d5943ff0-3dcb-4c2f-a6a2-cbb5308d3d63"
+      },
+      "embedding": {
+        "modelId": "amazon.titan-embed-text-v2:0",
+        "providerRequestId": "02ae93c5-bc17-4e34-845e-bacdbca57423",
+        "dimensions": 1024,
+        "digest": "f5ddea66202628174caa5a091fc4a29134fdb253e5aa710edbc4d5173e217116"
+      }
+    },
+    "s3": {
+      "providerRequestId": "VHS94D98E7NVYDM3",
+      "versionId": "VXhHqgSu4FIWSg6a2PrlFnaamEBYeM7E",
+      "key": "artifacts/5da2056025933029c9324228f8df7b9840385171bbe08e75eddfe0ae3eaf2240.json",
+      "digest": "5da2056025933029c9324228f8df7b9840385171bbe08e75eddfe0ae3eaf2240",
+      "etag": "\"858dfe8d86a2ed9a7a7e07bbebb709fc\""
+    },
+    "eventBridge": {
+      "providerRequestId": "88da796d-c723-4efc-8f8c-121f4e675b5d",
+      "eventId": "2a315dfa-c57e-2983-9006-3e79c68c2c91"
+    },
+    "probe": {
+      "tenantId": "d7cb8d2f-0993-52a5-a02a-a353d0254f5d",
+      "memoryId": "d29c2942-9ae0-5cea-97f6-8cff6b0ee007"
+    }
+  },
+  "vector": {
+    "schemaVersion": 2,
+    "runId": "d43701da-49a9-4ed9-967d-485c125b70c9",
+    "generatedAt": "2026-08-17T18:33:16.892Z",
+    "aws": {
+      "accountId": "[redacted-account]",
+      "region": "us-east-1",
+      "stackName": "stash-production",
+      "stackId": "arn:aws:cloudformation:us-east-1:[redacted-account]:stack/stash-production/437a3460-9a66-11f1-b39d-0e687ba035b3",
+      "apiUrl": "https://mltyzpfzqb.execute-api.us-east-1.amazonaws.com/v1",
+      "bucket": "stash-production-evidencebucket-nayneqt0dvoa",
+      "eventBus": "stash",
+      "databaseSecretArn": "[redacted]",
+      "evaluatorModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "embeddingModelId": "amazon.titan-embed-text-v2:0"
+    },
+    "cockroach": {
+      "clusterId": "283b3b90-fd4c-41d4-92ed-8adac243ca15",
+      "sqlClusterId": "9fad7a1e-e440-4989-3818-bc191b76705e",
+      "organizationId": "2039bcda-6470-4d1c-a812-b06890e7a690",
+      "region": "us-east-1",
+      "tier": "BASIC",
+      "host": "stash-prod-32228.j77.aws-us-east-1.cockroachlabs.cloud"
+    },
+    "kind": "vector",
+    "probe": {
+      "tenantId": "d7cb8d2f-0993-52a5-a02a-a353d0254f5d",
+      "memoryId": "d29c2942-9ae0-5cea-97f6-8cff6b0ee007",
+      "sqlClusterId": "9fad7a1e-e440-4989-3818-bc191b76705e"
+    },
+    "vector": {
+      "columnType": "VECTOR(1024)",
+      "indexName": "memory_versions_active_embedding_idx",
+      "indexColumn": "embedding",
+      "indexType": "VECTOR",
+      "ready": true,
+      "visible": true,
+      "explainIndexName": "memory_versions_active_embedding_idx",
+      "jobId": "1202326185372712961",
+      "jobStatus": "succeeded",
+      "jobFinishedAt": "2026-08-17T18:27:17.000Z"
+    }
+  },
+  "ccloud": {
+    "schemaVersion": 2,
+    "runId": "d43701da-49a9-4ed9-967d-485c125b70c9",
+    "generatedAt": "2026-08-17T18:32:40.374Z",
+    "aws": {
+      "accountId": "[redacted-account]",
+      "region": "us-east-1",
+      "stackName": "stash-production",
+      "stackId": "arn:aws:cloudformation:us-east-1:[redacted-account]:stack/stash-production/437a3460-9a66-11f1-b39d-0e687ba035b3",
+      "apiUrl": "https://mltyzpfzqb.execute-api.us-east-1.amazonaws.com/v1",
+      "bucket": "stash-production-evidencebucket-nayneqt0dvoa",
+      "eventBus": "stash",
+      "databaseSecretArn": "[redacted]",
+      "evaluatorModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "embeddingModelId": "amazon.titan-embed-text-v2:0"
+    },
+    "cockroach": {
+      "clusterId": "283b3b90-fd4c-41d4-92ed-8adac243ca15",
+      "sqlClusterId": "9fad7a1e-e440-4989-3818-bc191b76705e",
+      "organizationId": "2039bcda-6470-4d1c-a812-b06890e7a690",
+      "region": "us-east-1",
+      "tier": "BASIC",
+      "host": "stash-prod-32228.j77.aws-us-east-1.cockroachlabs.cloud"
+    },
+    "kind": "ccloud",
+    "ccloud": {
+      "clusterId": "283b3b90-fd4c-41d4-92ed-8adac243ca15",
+      "organizationId": "2039bcda-6470-4d1c-a812-b06890e7a690",
+      "provider": "AWS",
+      "region": "us-east-1",
+      "tier": "BASIC",
+      "host": "stash-prod-32228.j77.aws-us-east-1.cockroachlabs.cloud",
+      "state": "CREATED"
+    }
+  },
+  "cloudWatch": {
+    "eventId": "39851243985699099188426431613066728664018375338177134594"
+  },
+  "xray": {
+    "traceId": "1-6a8353df-031a33b47aeea62342f19ce8"
+  },
+  "s3": {
+    "etag": "\"858dfe8d86a2ed9a7a7e07bbebb709fc\""
+  },
+  "serviceEventId": "39851244120507103913544048513097552356521037773084098560"
+}

@@ -11,7 +11,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  experimental: { typedRoutes: true },
+  typedRoutes: true,
+  outputFileTracingRoot: process.cwd(),
+  turbopack: { root: process.cwd() },
   env: { NEXT_PUBLIC_APP_URL: canonicalOrigin },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

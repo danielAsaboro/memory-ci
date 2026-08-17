@@ -1,58 +1,52 @@
-# Hackathon submission evidence matrix
+# Stash hackathon submission
 
-## Devpost copy
+## One-line pitch
 
-### One-line pitch
+Stash is the release control plane for production agent memory: provenance, poisoning checks, behavioral tests, evidence-bound review, atomic promotion, semantic retrieval, lineage, and forward-only rollback.
 
-Memory CI is the release control plane for production agent memory: pull requests, behavioral tests, evidence-bound review, atomic promotion, lineage, and forward-only rollback.
+## What it does
 
-### What it does
+Agent memory is production state. A poisoned instruction can silently change every future action by every agent that retrieves it. Stash puts a release protocol between proposed memory and active truth.
 
-Agent memory is production state. A poisoned instruction does not affect one answer; once activated, it can silently change every future action by every agent that retrieves it. Memory CI puts a release protocol between candidate memory and active memory.
+Every proposal has immutable provenance and a content digest. Deterministic screening blocks injection, scope broadening, secrets, and unsupported trust claims. Safe candidates are replayed against recorded scenarios at both the baseline and candidate-overlay revisions. Tool constraints are deterministic; Amazon Bedrock is restricted to a structured judgment contract, and timeout or malformed output is inconclusive.
 
-Every proposed change arrives with provenance and an immutable digest. Deterministic screening blocks prompt injection, scope broadening, secret-like content, and unsupported provenance. Safe candidates are evaluated by replaying matched scenarios against both the current revision and the candidate overlay. Tool constraints are checked deterministically; Amazon Bedrock is restricted to a forced structured judgment contract, and a timeout or malformed response is inconclusive rather than a pass.
+Approval binds exact content, evaluation, policy, and baseline. A CockroachDB serializable transaction rejects stale evidence, supersedes the prior version, activates the new version, advances namespace revision, appends tamper-evident audit lineage, and writes the outbox event. Retrieval searches only active memory through the co-resident distributed vector index. Rollback creates another auditable forward revision.
 
-Approval binds the candidate digest, evaluation run, policy version, and baseline revision. A single CockroachDB serializable transaction rejects stale evidence, supersedes the previous version, activates the new one, increments the namespace revision, appends the tamper-evident audit chain, and writes the transactional outbox event. Retrieval reads only active versions, records purpose and exact revision, and supports forward-only rollback without deleting history.
+## Why CockroachDB is essential
 
-### Why CockroachDB is essential
+CockroachDB is the consistency boundary for candidates, provenance, evaluations, reviews, active revisions, retrieval receipts, audit lineage, and outbox delivery. `VECTOR(1024)` embeddings and distributed vector indexes live beside transactional state, eliminating drift between semantic search and the authoritative release record.
 
-CockroachDB is not a passive transcript store. It is the consistency boundary for candidate state, active revisions, evaluation evidence, approvals, retrieval receipts, audit lineage, and outbox delivery. `VECTOR(1024)` embeddings and distributed vector indexes live beside that operational state, eliminating drift between semantic retrieval and the authoritative release record.
+## Tools used
 
-### How it was built
+- **CockroachDB Distributed Vector Indexing:** tenant/namespace/active-prefixed 1024-dimensional cosine index for production agent retrieval. Live evidence checks the column, exact index definition, succeeded index job, and indexed query plan.
+- **ccloud CLI:** authenticated JSON evidence verifies the live AWS-hosted CockroachDB Cloud cluster, organization, region, tier, host, and created state.
+- **CockroachDB Agent Skills Repo:** official schema, transaction, privilege, audit, and operational-health skills informed implementation review.
+- **Amazon Bedrock:** structured semantic-risk evaluation plus managed 1024-dimensional embeddings.
+- **AWS Lambda and API Gateway:** authenticated API, transactional outbox, and behavioral sandbox.
+- **Amazon S3:** encrypted, versioned, content-addressed evaluation artifacts.
+- **Amazon EventBridge:** idempotent lifecycle distribution; Secrets Manager, CloudWatch, X-Ray, and Cognito support production operation.
 
-- Next.js and TypeScript provide the responsive reviewer console and deterministic judge demo.
-- CockroachDB stores the full memory release graph with tenant-scoped constraints, serializable promotion, retry handling, vector indexes, immutable audit linkage, and an idempotent outbox.
-- Amazon Bedrock supplies structured semantic-risk and behavioral-diff judgments.
-- AWS Lambda runs the API adapter, deterministic tool sandbox, and outbox dispatcher.
-- Amazon S3 stores encrypted, versioned, content-addressed evidence artifacts.
-- Amazon EventBridge distributes idempotent lifecycle events; Cognito, Secrets Manager, CloudWatch, and X-Ray provide identity, secret delivery, alarms, logs, and traces.
-- AWS SAM defines the deployable cloud environment and its least-privilege policies.
+## What makes it different
 
-### What makes it different
+Most memory products optimize what an agent *can* remember. Stash governs what an agent is *allowed* to remember. Memory changes ship like code: reviewable, behavior-tested, atomic, observable, reversible, and durable across failures.
 
-Most memory products optimize what an agent can remember. Memory CI governs what an agent is allowed to remember. It treats memory changes as releases, evaluates downstream behavior rather than prose similarity, fails closed when evidence is incomplete, and makes rollback a new auditable revision rather than destructive history rewriting.
+| Requirement | Public proof |
+|---|---|
+| Functional production app | [trystash.xyz](https://trystash.xyz) |
+| Public open-source repository | [github.com/danielAsaboro/stash-cockcroachdb](https://github.com/danielAsaboro/stash-cockcroachdb) |
+| Persistent CockroachDB memory | `db/migrations/`, integration tests, and live redacted receipt |
+| Two or more CockroachDB tools | Distributed Vector Indexing, `ccloud` CLI, and Agent Skills Repo |
+| AWS deployment | SAM stack plus correlated Bedrock/Lambda/S3/EventBridge/CloudWatch/X-Ray receipt |
+| Reproducible quality | unit, Cockroach integration, desktop/mobile lifecycle, WCAG, SAM, and production audit gates |
+| Under-three-minute video | 2:41.83 rendered demo; public YouTube/Vimeo link added at submission time |
 
-### CockroachDB AI tool feedback
+## Production evidence
 
-- Distributed Vector Indexing is most valuable when vector and transactional state can be proven co-resident and consistent; an official one-command evidence export for index metadata plus `EXPLAIN` would make demos and audits easier.
-- The Agent Skills Repo usefully turns production guidance into executable review steps. Versioned skill manifests and machine-readable result schemas would make it easier to record exactly which guidance informed a release.
-- Managed MCP's read-only default and audit trail are strong safety choices. A local authenticated simulator would help teams develop and test the same MCP contract before a cloud cluster is available.
-- `ccloud` JSON output is agent-friendly. A documented non-interactive device flow and short-lived hackathon service-account bootstrap would reduce the remaining manual setup boundary.
+[evidence/stash-production.json](evidence/stash-production.json) is generated—not hand-authored—only after strict cross-receipt validation. Account and credential material are structurally redacted. It records one correlated live run across AWS and CockroachDB Cloud; the collector refuses fixtures, stale receipts, mismatched identities, incomplete vector jobs, missing provider request IDs, or unobserved artifacts.
 
-| Requirement | Implementation | Reproducible proof |
-|---|---|---|
-| Agentic application | Memory release control plane with ingestion, screening, behavioral evaluation, approval, promotion, retrieval, explanation, and rollback | `npm test`, `npm run test:integration`, `npm run test:e2e` |
-| Persistent memory | CockroachDB candidates, versions, namespace revisions, provenance, evaluations, reviews, reads, audit, and outbox | `db/migrations/001_initial.sql` and integration tests |
-| Distributed Vector Indexing | `VECTOR(1024)` columns and tenant/namespace/class-prefixed vector indexes | `npm run vector:evidence` prints version, index metadata, `EXPLAIN`, and a neighbor query |
-| Agent Skills Repo | Official SQL, transaction, privilege, audit, and health skills applied to schema and evidence review | `scripts/agent-skill-review.md` |
-| Amazon Bedrock | Forced-tool semantic risk and behavioral-diff judging with provider request IDs | unit tests; authenticated proof via `npm run aws:smoke` |
-| AWS Lambda | Real API Gateway adapter, outbox dispatcher, and refund sandbox | SAM build plus unit tests |
-| Amazon S3 | Content-addressed evaluation artifacts, versioned encrypted bucket | artifact unit tests and SAM template |
-| EventBridge | Transactional outbox delivery with stable event IDs and retry | event tests and `src/lambda/outbox.ts` |
-| Public open source | MIT license, complete source, setup and test instructions | `https://github.com/danielAsaboro/memory-ci` |
-| Functional demo | Responsive deterministic judge experience | `https://memory-ci.asaborodaniel.chatgpt.site` |
-| Under-3-minute video | Rendered 2:41.83 master with narration, captions, and CockroachDB memory proof | public YouTube/Vimeo URL requires final upload |
+## CockroachDB AI tool feedback
 
-## Honest cloud-proof status
-
-Local tests, CockroachDB vector queries, SAM validation, and SAM build are reproducible now. AWS account calls, CockroachDB Cloud Managed MCP, and `ccloud` require owner authentication. Scripts fail closed and should be captured only after authentication; they are not claimed as completed merely because configuration exists.
+- A first-party command that exports vector-index definition, job readiness, and `EXPLAIN` evidence together would simplify production audits.
+- Versioned Agent Skills manifests and machine-readable result schemas would make applied guidance easier to attest.
+- Managed MCP's read-only default and audit trail are strong safety choices; a contract-compatible local simulator would improve pre-cloud development.
+- `ccloud` JSON output is agent-friendly. A documented non-interactive device flow for short-lived hackathon service accounts would reduce the remaining manual authentication boundary.

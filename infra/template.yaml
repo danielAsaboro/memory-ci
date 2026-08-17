@@ -151,7 +151,7 @@ Resources:
       EventPattern: { detail-type: ["stash.cloud_smoke"] }
       Targets:
         - Id: stash-production-observations
-          Arn: { Fn::GetAtt: [EvidenceObservationLogGroup, Arn] }
+          Arn: { Fn::Sub: "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EvidenceObservationLogGroup}" }
   ApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -214,7 +214,11 @@ Resources:
                 Resource: { Fn::GetAtt: [MemoryEventBus, Arn] }
               - Effect: Allow
                 Action: ["bedrock:InvokeModel"]
-                Resource: { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}" }
+                Resource:
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
+                  - { Fn::Sub: "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0" }
   SandboxRole:
     Type: AWS::IAM::Role
     Properties:

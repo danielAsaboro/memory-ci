@@ -1,57 +1,40 @@
-# Memory CI
+# Stash
 
 > Ship agent memory with the same discipline as code.
 
-Memory CI is the pull-request, test, release, lineage, and rollback control plane for production AI-agent memory. A memory cannot silently become production truth: it is proposed with provenance, screened for poisoning, evaluated against recorded trajectories, approved against a bound digest and baseline revision, then atomically promoted. Agents read only committed revisions.
+Stash is a production release control plane for AI-agent memory. Teams propose durable memory with provenance, screen it for poisoning, replay behavioral evaluations, bind human approval to exact evidence, promote it atomically, inspect its lineage, and roll it back without rewriting history.
 
 Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/).
 
 ## Live product
 
-- Demo: [memory-ci.asaborodaniel.chatgpt.site](https://memory-ci.asaborodaniel.chatgpt.site)
-- Guided story: open **Onboarding**, then run the poison-attempt, policy-promotion, second-agent, and rollback path.
-- The hosted UI uses a deterministic Northstar refund-agent fixture so judges can replay the entire story without credentials. Cloud controls fail closed and are never represented as live evidence unless authenticated proof exists.
+- Application: [trystash.xyz](https://trystash.xyz)
+- Source: [github.com/danielAsaboro/stash-cockcroachdb](https://github.com/danielAsaboro/stash-cockcroachdb)
+- Start at **Onboarding**. Stash creates an isolated persisted workspace, then guides you through a poison attempt, behavioral evaluation, promotion, agent retrieval, and forward-only rollback.
 
-## Why this needs CockroachDB
+This is a functional production application. The Next.js console runs on Vercel, the API and agent workloads run on AWS, and CockroachDB Cloud is the durable transactional and semantic-memory system of record. Cloud controls fail closed; unavailable or malformed evidence never becomes a pass.
 
-Memory CI keeps the operational record and the semantic index in one serializable system:
+## Why CockroachDB is essential
 
-- transactional candidates, immutable audit chain, reviews, evaluation results, releases, namespace revisions, and rollback lineage;
-- `VECTOR(1024)` embeddings and distributed vector indexes—no consistency gap with a separate vector store;
-- serializable promotion and rollback transactions with bounded `40001` retry, idempotency keys, active-version uniqueness, and an outbox;
-- tenant-scoped queries, least-privilege `memory_ci_app` and read-only `memory_ci_auditor` roles;
-- schema and operational review performed with the official open-source CockroachDB Agent Skills.
+Stash keeps the operational release graph and semantic index in one serializable system:
 
-This submission uses two qualifying CockroachDB tools: **Distributed Vector Indexing** and the **CockroachDB Agent Skills Repo**. Managed MCP and `ccloud` evidence scripts are included for authenticated judging, but are not falsely claimed as executed in this environment.
+- candidates, immutable provenance, screening findings, evaluations, reviews, releases, reads, audit lineage, and an outbox;
+- `VECTOR(1024)` embeddings with a distributed vector index over active tenant memory;
+- serializable promotion and rollback with bounded `40001` retries, idempotency, active-version uniqueness, and forward-only revisions;
+- production identity and index readiness independently verified with the agent-ready `ccloud` CLI.
 
-## AWS services
+The submission uses **CockroachDB Distributed Vector Indexing**, the **ccloud CLI**, and the **CockroachDB Agent Skills Repo**. The official skills informed schema, transaction, privilege, operational-health, and audit review.
 
-- **Amazon Bedrock** performs forced-tool semantic risk and behavioral-diff judgments; malformed or unavailable provider output is inconclusive, never a pass.
-- **AWS Lambda** runs the authenticated API, transactional outbox dispatcher, and deterministic refund sandbox.
-- **Amazon S3** stores content-addressed, versioned evaluation artifacts.
-- **Amazon EventBridge** distributes idempotent memory lifecycle events.
-- **Amazon Cognito**, CloudWatch, Secrets Manager, and X-Ray provide reviewer identity, alarms/log retention, secret delivery, and tracing.
+## AWS and Vercel
 
-The deployable SAM stack and least-privilege IAM are in [`infra/template.yaml`](infra/template.yaml).
+- **Amazon Bedrock** performs structured semantic-risk judgments and generates managed 1024-dimensional embeddings.
+- **AWS Lambda + API Gateway** run the authenticated API, transactional outbox dispatcher, and behavioral sandbox.
+- **Amazon S3** stores encrypted, versioned, content-addressed evidence.
+- **Amazon EventBridge** distributes idempotent lifecycle events.
+- **Secrets Manager, CloudWatch, X-Ray, and Cognito** provide secret delivery, retained observations, tracing, and production identity infrastructure.
+- **Vercel** serves the reviewer console and its signed, HTTP-only same-origin session gateway at `trystash.xyz`.
 
-## Architecture
-
-```mermaid
-flowchart LR
-  U[Reviewer console] --> C[Amazon Cognito]
-  U --> A[API Gateway + Lambda]
-  G[Agent / source] --> A
-  A --> D[(CockroachDB)]
-  D --> V[Distributed vector index]
-  A --> B[Amazon Bedrock]
-  A --> S[Amazon S3 evidence]
-  D --> O[Transactional outbox]
-  O --> E[Lambda dispatcher]
-  E --> EB[Amazon EventBridge]
-  A --> X[Lambda tool sandbox]
-```
-
-See [`docs/architecture.md`](docs/architecture.md) for trust boundaries and the release protocol.
+See [docs/architecture.md](docs/architecture.md) for the trust boundaries and release protocol.
 
 ## Run locally
 
@@ -59,13 +42,13 @@ Requirements: Node.js 22.13+, Docker, and npm.
 
 ```bash
 cp .env.example .env.local
-npm install
+npm ci
 docker compose up -d
 npm run demo:reset
 npm run dev
 ```
 
-Open `http://localhost:3000/onboarding`. The demo reset is idempotent.
+Open `http://localhost:3000/onboarding`. Local demo data is generated only for development and tests; production bootstraps a real isolated CockroachDB workspace through AWS.
 
 ## Verify
 
@@ -74,37 +57,29 @@ npm run verify
 npm run test:e2e
 npm run infra:validate
 npm run infra:build
-npm run vector:evidence
+npm run production:audit
 ```
 
-Integration tests default to `postgresql://root@localhost:26258/defaultdb?sslmode=disable`; override with `TEST_DATABASE_URL`. AWS and Cockroach Cloud checks require real credentials and intentionally fail rather than manufacturing proof.
+Integration tests default to `postgresql://root@localhost:26258/defaultdb?sslmode=disable`; override with `TEST_DATABASE_URL`. Authenticated production evidence is generated by the fail-closed `evidence:context`, `ccloud:evidence`, `aws:smoke`, `vector:evidence`, and `cloud:evidence` commands. The resulting redacted receipt is in [docs/evidence/stash-production.json](docs/evidence/stash-production.json).
 
-## Deploy AWS
+## Deploy
 
-1. Create a CockroachDB Cloud cluster and secret whose JSON contains `DATABASE_URL`.
-2. Run migrations using an administrative connection, then use the `memory_ci_app` role at runtime.
-3. Build and deploy:
+1. Provision CockroachDB Cloud and store the protected runtime URL in AWS Secrets Manager.
+2. Apply `db/migrations/` with an administrative SQL principal; use the restricted runtime principal in Lambda.
+3. Validate, build, and deploy `infra/template.yaml` with the protected SAM parameter file.
+4. Configure Vercel Production with server-only `STASH_API_BASE_URL`, `STASH_BOOTSTRAP_KEY`, and `STASH_SESSION_SECRET`, plus `NEXT_PUBLIC_APP_URL=https://trystash.xyz`.
+5. Deploy from the linked Vercel `stash` project and verify the live lifecycle.
 
-```bash
-npm run infra:validate
-npm run infra:build
-sam deploy --guided --template-file .aws-sam/build/template.yaml
-```
-
-4. Add a Cognito principal mapping in `principals.external_subject`, configure the console API URL, and run `npm run aws:smoke`.
+Never commit production parameter files, database URLs, session secrets, bootstrap keys, or trusted-source private material.
 
 ## Repository map
 
-- `app/` — responsive reviewer console and guided onboarding
-- `src/domain/` — lifecycle, risk policy, screening, behavioral diffs
-- `src/services/` — ingestion, evaluation, retrieval, promotion, explanation, rollback
-- `src/db/` and `db/migrations/` — CockroachDB repositories, schema, security roles, vector indexes
-- `src/aws/` and `src/lambda/` — Bedrock, S3, EventBridge, Cognito-facing runtime
-- `tests/e2e/` — desktop/mobile journey and WCAG checks
-- `scripts/` — deterministic demo plus cloud/vector/MCP evidence capture
+- `app/` — responsive reviewer console and same-origin gateway
+- `src/domain/` — lifecycle, risk policy, screening, and behavioral diffs
+- `src/services/` — ingestion, evaluation, retrieval, promotion, explanation, and rollback
+- `src/db/`, `db/migrations/` — CockroachDB schema, repositories, roles, and vector indexes
+- `src/aws/`, `src/lambda/`, `infra/` — Bedrock, S3, EventBridge, Lambda, and SAM infrastructure
+- `tests/e2e/` — desktop/mobile lifecycle and WCAG checks
+- `scripts/` — migration, release audit, and authenticated production evidence
 
-## Security and evidence
-
-Read [`SECURITY.md`](SECURITY.md) before deploying. The evidence matrix in [`docs/submission.md`](docs/submission.md) distinguishes implemented/tested proof from credential-dependent cloud proof.
-
-MIT licensed. Contributions are welcome through issues and pull requests.
+Read [SECURITY.md](SECURITY.md) before deployment. MIT licensed.

@@ -1,6 +1,6 @@
 # 2:45 demo video script
 
-**0:00–0:15 — Problem.** “Agents write durable instructions constantly. One poisoned memory can silently change every future action. Memory CI makes memory ship like code.” Show Overview and the production revision.
+**0:00–0:15 — Problem.** “Agents write durable instructions constantly. One poisoned memory can silently change every future action. Stash makes memory ship like code.” Show Overview and the production revision.
 
 **0:15–0:42 — Poison attempt.** Run the gift-card-routing candidate. Open its change. Point to untrusted provenance, critical instruction-injection finding, and automatic quarantine. “The candidate never enters retrieval.”
 
@@ -12,4 +12,4 @@
 
 **2:08–2:28 — AWS.** Show the architecture: Bedrock evaluation, S3 evidence, Lambda API/sandbox/outbox, EventBridge delivery, Cognito identity. Briefly show SAM build output and authenticated request IDs if available.
 
-**2:28–2:45 — Rollback.** Roll back to the previous version and show a new forward revision plus the immutable audit event. Close: “Memory CI: ship agent memory with the same discipline as code.”
+**2:28–2:45 — Rollback.** Roll back to the previous version and show a new forward revision plus the immutable audit event. Close: “Stash: ship agent memory with the same discipline as code.”

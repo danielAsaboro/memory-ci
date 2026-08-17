@@ -3,6 +3,8 @@ import { createPrivateKey, sign } from "node:crypto";
 
 import { canonicalSourceSignaturePayload } from "../../src/services/source-signature";
 
+const liveProduction = Boolean(process.env.PLAYWRIGHT_BASE_URL);
+
 type Candidate = { id: string; namespaceId: string };
 type AuditEvent = { action: string; requestId: string; resource: { id: string } };
 
@@ -82,9 +84,10 @@ test("does not approve an authenticated proposal when its signed source is tampe
 
 test("evaluates, approves, promotes, semantically reads, rolls back, and audits generated IDs", async ({ page }, testInfo) => {
   test.slow();
+  if (liveProduction) test.setTimeout(240_000);
   const runId = `${testInfo.project.name}-${testInfo.parallelIndex}-${Date.now()}`;
   const [starter] = await candidatesFromServer(page);
-  const candidateId = await propose(page, { namespaceId: starter!.namespaceId, canonicalText: `Refunds above $150 require human review. E2E threshold ${runId}.`, trustClass: "authenticated", sourceContent: `signed threshold change evidence ${runId}`, sign: true });
+  const candidateId = await propose(page, { namespaceId: starter!.namespaceId, canonicalText: `Refunds above $150 require human review. E2E threshold ${runId}.`, trustClass: liveProduction ? "observed" : "authenticated", sourceContent: `signed threshold change evidence ${runId}`, sign: !liveProduction });
   await page.goto(`/changes/${candidateId}`);
   const screenedResponse = page.waitForResponse((response) => response.url().includes(`/candidates/${candidateId}/screen`) && response.request().method() === "POST");
   await page.getByRole("button", { name: "Screen candidate" }).click();
@@ -92,7 +95,7 @@ test("evaluates, approves, promotes, semantically reads, rolls back, and audits 
   const evaluatedResponse = page.waitForResponse((response) => response.url().includes(`/candidates/${candidateId}/evaluate`) && response.request().method() === "POST");
   await page.getByRole("button", { name: "Run evaluation" }).click();
   const evaluationRequestId = (await evaluatedResponse).headers()["x-request-id"]!;
-  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/);
+  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/, { timeout: liveProduction ? 90_000 : 5_000 });
   const evidence = await page.evaluate(async (id) => {
     const runs = await (await fetch("/api/stash/v1/evaluations")).json() as Array<{ id: string; candidateId: string }>;
     const run = runs.find((item) => item.candidateId === id)!;
@@ -101,9 +104,13 @@ test("evaluates, approves, promotes, semantically reads, rolls back, and audits 
     return { runId: run.id, artifactUri };
   }, candidateId);
   expect(evidence.runId).toMatch(/^[0-9a-f-]{36}$/);
-  const artifactResponse = await page.request.get(evidence.artifactUri);
-  expect(artifactResponse.ok()).toBe(true);
-  expect(await artifactResponse.json()).toMatchObject({ candidateId });
+  if (liveProduction) {
+    expect(evidence.artifactUri).toMatch(/^s3:\/\/[^/]+\/artifacts\/[a-f0-9]{64}\.json$/);
+  } else {
+    const artifactResponse = await page.request.get(evidence.artifactUri);
+    expect(artifactResponse.ok()).toBe(true);
+    expect(await artifactResponse.json()).toMatchObject({ candidateId });
+  }
   await page.getByLabel("Review reason").fill(`approve ${runId}`);
   await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
   const reviewedResponse = page.waitForResponse((response) => response.url().includes(`/candidates/${candidateId}/reviews`) && response.request().method() === "POST");
@@ -157,6 +164,7 @@ test("evaluates, approves, promotes, semantically reads, rolls back, and audits 
 });
 
 test("shows Inconclusive and keeps approval disabled when the Bedrock adapter times out", async ({ page }, testInfo) => {
+  test.skip(liveProduction, "production does not expose a synthetic provider-timeout control");
   test.slow();
   const [starter] = await candidatesFromServer(page);
   const candidateId = await propose(page, { namespaceId: starter!.namespaceId, canonicalText: `Routine provider check e2e-provider-timeout-marker-${testInfo.project.name}-${Date.now()}`, trustClass: "observed", sourceContent: `timeout provider evidence ${Date.now()}` });

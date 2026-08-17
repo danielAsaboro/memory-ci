@@ -67,9 +67,25 @@ describe("AWS SAM template", () => {
     expect((source.match(/xray:PutTelemetryRecords/g) ?? []).length).toBe(3);
   });
 
+  it("allows the outbox evaluator to invoke the cross-region Haiku inference profile", async () => {
+    const source = await readFile(templatePath, "utf8");
+    const outbox = source.slice(source.indexOf("  OutboxRole:"), source.indexOf("  SandboxRole:"));
+    expect(outbox).toContain("inference-profile/${BedrockModelId}");
+    for (const region of ["us-east-1", "us-east-2", "us-west-2"]) {
+      expect(outbox).toContain(`bedrock:${region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`);
+    }
+    expect(outbox).not.toContain("foundation-model/${BedrockModelId}");
+  });
+
   it("builds the Bedrock log-stream ARN from the log-group name without an embedded wildcard", async () => {
     const source = await readFile(templatePath, "utf8");
     expect(source).toContain('Fn::Sub: "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BedrockInvocationLogGroup}:log-stream:*"');
     expect(source).not.toContain("${BedrockInvocationLogGroup.Arn}:log-stream");
+  });
+
+  it("uses the exact CloudWatch log-group ARN as the EventBridge target", async () => {
+    const template = parse(await readFile(templatePath, "utf8")) as { Resources: Record<string, { Properties?: Record<string, unknown> }> };
+    const targets = template.Resources.EvidenceObservationRule.Properties?.Targets as Array<{ Arn?: unknown }>;
+    expect(targets[0]?.Arn).toEqual({ "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EvidenceObservationLogGroup}" });
   });
 });

@@ -85,6 +85,7 @@ async function counts(tenantId: string) {
          UNION ALL SELECT 'memory_candidates', count(*)::STRING FROM memory_candidates WHERE tenant_id=$1
          UNION ALL SELECT 'memory_lineages', count(*)::STRING FROM memory_lineages WHERE tenant_id=$1
          UNION ALL SELECT 'memory_versions', count(*)::STRING FROM memory_versions WHERE tenant_id=$1
+         UNION ALL SELECT 'evaluation_scenarios', count(*)::STRING FROM evaluation_scenarios WHERE tenant_id=$1
          UNION ALL SELECT 'audit_events', count(*)::STRING FROM audit_events WHERE tenant_id=$1
        ) ORDER BY table_name`,
       [tenantId],
@@ -134,6 +135,7 @@ describe("workspace bootstrap", () => {
         "SELECT action,previous_event_digest FROM audit_events WHERE tenant_id=$1", [workspace.tenantId],
       ),
       evaluationRuns: await client.query("SELECT id FROM evaluation_runs WHERE tenant_id=$1", [workspace.tenantId]),
+      scenarios: await client.query("SELECT name,input_payload,expected_tool_constraints,active FROM evaluation_scenarios WHERE tenant_id=$1", [workspace.tenantId]),
       quarantined: await client.query("SELECT id FROM memory_candidates WHERE tenant_id=$1 AND state='quarantined'", [workspace.tenantId]),
     }));
 
@@ -145,6 +147,11 @@ describe("workspace bootstrap", () => {
     expect(persisted.starter.rows[0]?.canonical_text).toMatch(/Northstar/i);
     expect(persisted.audit.rows).toEqual([{ action: "workspace.created", previous_event_digest: null }]);
     expect(persisted.evaluationRuns.rows).toEqual([]);
+    expect(persisted.scenarios.rows).toEqual([expect.objectContaining({
+      name: "Refund destination safety", active: true,
+      input_payload: expect.objectContaining({ destination: "original" }),
+      expected_tool_constraints: expect.objectContaining({ toolName: "issue_sandbox_refund" }),
+    })]);
     expect(persisted.quarantined.rows).toEqual([]);
   });
 
@@ -167,7 +174,7 @@ describe("workspace bootstrap", () => {
 
     expect(second).toEqual(first);
     await expect(counts(first.tenantId)).resolves.toEqual({
-      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      agent_namespaces: 1, audit_events: 1, evaluation_scenarios: 1, memory_candidates: 1, memory_lineages: 1,
       memory_versions: 1, principals: 2, sources: 1,
     });
   });
@@ -179,7 +186,7 @@ describe("workspace bootstrap", () => {
     });
 
     await expect(counts(workspace.tenantId)).resolves.toEqual({
-      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      agent_namespaces: 1, audit_events: 1, evaluation_scenarios: 1, memory_candidates: 1, memory_lineages: 1,
       memory_versions: 1, principals: 2, sources: 1,
     });
   });
@@ -191,11 +198,11 @@ describe("workspace bootstrap", () => {
     expect(second.tenantId).not.toBe(first.tenantId);
     expect(second.principalId).not.toBe(first.principalId);
     await expect(counts(first.tenantId)).resolves.toEqual({
-      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      agent_namespaces: 1, audit_events: 1, evaluation_scenarios: 1, memory_candidates: 1, memory_lineages: 1,
       memory_versions: 1, principals: 2, sources: 1,
     });
     await expect(counts(second.tenantId)).resolves.toEqual({
-      agent_namespaces: 1, audit_events: 1, memory_candidates: 1, memory_lineages: 1,
+      agent_namespaces: 1, audit_events: 1, evaluation_scenarios: 1, memory_candidates: 1, memory_lineages: 1,
       memory_versions: 1, principals: 2, sources: 1,
     });
   });
