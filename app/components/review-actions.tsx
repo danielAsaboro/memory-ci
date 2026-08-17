@@ -85,14 +85,15 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
     const schedule = (wait: number) => { const nextRemaining = deadline - Date.now(); if (nextRemaining <= 0) { expire(); return; } timer = setTimeout(poll, Math.min(wait, nextRemaining)); };
     const poll = async () => { try {
       if (Date.now() >= deadline) { expire(); return; }
-      if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
+      if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id && item.id !== evaluationRequestBaseline?.id).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
       const result = await getEvaluation(effectiveEvaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
       if (terminal.has(result.status)) { setEvaluationRequestBaseline(null); setNotice(`Evaluation ${result.status}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
       schedule(delays[attempt++] ?? 5_000);
-    } catch (error) { if (active && !controller.signal.aborted) setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } };
+    } catch (error) { if (active && !controller.signal.aborted) { if (pollDeadline.current === activeDeadline) pollDeadline.current = null; settle(); setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } } };
     schedule(delays[attempt++] ?? 1_000); return settle;
-  }, [candidate.id, candidate.state, currentEvidenceStatus, effectiveEvaluationId, evaluate.isSuccess, invalidate]);
-  const runAvailable = candidate.state === "evaluating" && !["pending", "running"].includes(currentEvidence?.status ?? "");
+  }, [candidate.id, candidate.state, currentEvidenceStatus, effectiveEvaluationId, evaluate.isSuccess, evaluationRequestBaseline?.id, invalidate]);
+  const evaluationPropIsAuthoritative = candidate.latestEvaluationId ? evaluation?.id === candidate.latestEvaluationId : !evaluation;
+  const runAvailable = candidate.state === "evaluating" && evaluationPropIsAuthoritative && !evaluate.isPending && !evaluate.isSuccess && !["pending", "running"].includes(currentEvidence?.status ?? "");
   const canReview = candidate.state === "review_required" && Boolean(currentEvidence);
   return <section className="review-actions"><div><strong>{blocked ? "Promotion blocked" : "Evaluation evidence passed"}</strong><small>{blocked ? "Approval requires passed, current, non-quarantined evidence." : "Review is bound to the completed evaluation run."}</small>{notice ? <small role="status">{notice}</small> : null}</div>
     {candidate.state === "proposed" ? <button className="button primary" onClick={() => screen.mutate()} disabled={screen.isPending}>Screen candidate</button> : null}

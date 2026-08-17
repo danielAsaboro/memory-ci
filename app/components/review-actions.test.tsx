@@ -55,6 +55,115 @@ describe("ReviewActions", () => {
     vi.useRealTimers();
   });
 
+  it("polls an advanced authoritative evaluation before its matching evaluation prop arrives", async () => {
+    vi.useFakeTimers();
+    const nextEvaluation = {
+      ...evaluation,
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "pending" as const,
+      startedAt: null,
+      completedAt: null,
+      providerRequestId: null,
+      resultCount: 0,
+    };
+    const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    const view = renderActions();
+
+    view.rerenderActions({
+      candidate: { ...candidate, state: "evaluating", latestEvaluationId: nextEvaluation.id },
+    });
+
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+    view.rerenderActions({ evaluation: null });
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${nextEvaluation.id}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    view.rerenderActions({ evaluation: nextEvaluation });
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+  });
+
+  it("keeps enqueue hidden when the evaluation prop arrives before the candidate identity", async () => {
+    vi.useFakeTimers();
+    const nextEvaluation = {
+      ...evaluation,
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "pending" as const,
+      startedAt: null,
+      completedAt: null,
+      providerRequestId: null,
+      resultCount: 0,
+    };
+    const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    const view = renderActions();
+
+    view.rerenderActions({
+      candidate: { ...candidate, state: "evaluating" },
+      evaluation: nextEvaluation,
+    });
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+
+    view.rerenderActions({
+      candidate: { ...candidate, state: "evaluating", latestEvaluationId: nextEvaluation.id },
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${nextEvaluation.id}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/stash/v1/candidates/${candidate.id}/evaluate`,
+      expect.anything(),
+    );
+  });
+
+  it("excludes the terminal request baseline when discovering its new pending evaluation", async () => {
+    vi.useFakeTimers();
+    const nextEvaluation = {
+      ...evaluation,
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "pending" as const,
+      startedAt: "2026-08-17T10:02:00.000Z",
+      completedAt: null,
+      providerRequestId: null,
+      resultCount: 0,
+    };
+    const fetchMock = vi.fn((path: string) => {
+      if (path.endsWith(`/candidates/${candidate.id}/evaluate`)) {
+        return Promise.resolve(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId: "99999999-9999-4999-8999-999999999999" }), { headers: { "content-type": "application/json" } }));
+      }
+      if (path.endsWith("/evaluations")) {
+        return Promise.resolve(new Response(JSON.stringify([
+          { ...evaluation, completedAt: "2026-08-17T10:03:00.000Z" },
+          nextEvaluation,
+        ]), { headers: { "content-type": "application/json" } }));
+      }
+      return new Promise<Response>(() => undefined);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderActions({ candidate: { ...candidate, state: "evaluating" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${nextEvaluation.id}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${evaluation.id}`,
+      expect.anything(),
+    );
+  });
+
   it("cancels a candidate-bound poll when the detail view unmounts", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ ...evaluation, status: "running", completedAt: null, results: [] }), { headers: { "content-type": "application/json" } })));
@@ -142,6 +251,34 @@ describe("ReviewActions", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(signals[0]?.aborted).toBe(true);
     expect(screen.getByText(/still running/i)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["evaluation discovery", null],
+    ["evaluation detail", { ...evaluation, status: "running" as const, completedAt: null }],
+  ])("settles a rejecting %s request without later replacing its safe error", async (_label, currentEvaluation) => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn((_path: string, init?: RequestInit) => {
+      signals.push(init?.signal as AbortSignal);
+      return Promise.reject(new Error("unsafe provider detail"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderActions({
+      candidate: { ...candidate, state: "evaluating", latestEvaluationId: currentEvaluation?.id ?? null },
+      evaluation: currentEvaluation,
+    });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("status")).toHaveTextContent("The Stash request could not be completed. Request ID: unknown.");
+    expect(signals[0]?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(100_000); });
+    expect(screen.getByRole("status")).toHaveTextContent("The Stash request could not be completed. Request ID: unknown.");
+    expect(screen.queryByText(/still running/i)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("keeps the original deadline when authoritative status changes restart polling for the same evaluation", async () => {
