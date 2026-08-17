@@ -36,6 +36,7 @@
 - Delete: `vite.config.ts`
 - Delete: `worker/index.ts`
 - Delete: `build/sites-vite-plugin.ts`
+- Delete: `.openai/hosting.json`
 - Modify: `app/layout.tsx`
 - Modify: `app/components/app-shell.tsx`
 - Modify: `app/globals.css`
@@ -438,7 +439,7 @@ git commit -m "feat: render Stash from persistent workspace data"
 - Create: `app/components/propose-memory-dialog.tsx`
 - Create: `app/components/propose-memory-dialog.test.tsx`
 - Modify: `app/components/review-actions.tsx`
-- Modify: `app/components/review-actions.test.tsx`
+- Create: `app/components/review-actions.test.tsx`
 - Modify: `app/components/lineage-timeline.tsx`
 - Modify: `app/components/behavioral-diff.tsx`
 - Modify: `src/lambda/outbox.ts`
@@ -613,7 +614,7 @@ Select a serverless/basic cluster in `us-east-1`, create database `stash`, run m
 
 - [ ] **Step 3: Verify distributed vector indexing**
 
-Run: `DATABASE_URL=<admin-connection> npm run vector:evidence`
+Run: `npm run vector:evidence` with `DATABASE_URL` exported from the authenticated CockroachDB connection retrieved in Step 2.
 
 Expected: evidence shows `VECTOR(1024)` columns and eligible distributed vector indexes on the production cluster.
 
@@ -625,7 +626,7 @@ Expected: CloudFormation reaches `CREATE_COMPLETE` or `UPDATE_COMPLETE` and outp
 
 - [ ] **Step 5: Run authenticated cloud smoke tests**
 
-Run: `STASH_API_BASE_URL=<stack-output> npm run aws:smoke` and `npm run cloud:evidence`.
+Export the stack output with `STASH_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name stash-production --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)`, then run `npm run aws:smoke` and `npm run cloud:evidence`.
 
 Expected: health, workspace creation, CockroachDB persistence, Bedrock evaluation, S3 evidence, EventBridge dispatch, CloudWatch logs, and X-Ray traces are verified with redacted identifiers.
 
