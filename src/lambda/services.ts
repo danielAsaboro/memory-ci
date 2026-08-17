@@ -17,6 +17,7 @@ import { retrieveActiveMemory } from "../services/retrieve-memory";
 import { createReadWorkspaceServices } from "../services/read-workspace";
 import { decideReview } from "../services/review-candidate";
 import { rollbackMemory } from "../services/rollback-memory";
+import { createEmbeddingProvider } from "../services/embedding-provider";
 
 export { bootstrapWorkspace } from "../services/bootstrap-workspace";
 
@@ -30,6 +31,7 @@ const requireLifecycleRole = (context: Parameters<ApiServices["getCandidate"]>[0
 };
 
 export function createApiServices(pool: Pool): ApiServices {
+  const embeddings = createEmbeddingProvider();
   const run = <T>(context: Parameters<ApiServices["getCandidate"]>[0], operation: (transaction: TenantTransaction) => Promise<T>) =>
     withTenantTransaction(pool, context.tenantId, operation);
   const readWorkspace = createReadWorkspaceServices(pool);
@@ -52,6 +54,7 @@ export function createApiServices(pool: Pool): ApiServices {
       } },
       candidates: new CandidateRepository(transaction), audit: new AuditRepository(transaction),
       outbox: new OutboxRepository(transaction),
+      embeddings,
       authorizeProtectedNamespace: async () => context.roles.some((role) => role === "admin" || role === "reviewer"),
       id: randomUUID,
     })),

@@ -10,6 +10,7 @@ describe("sandbox evaluation adapter", () => {
       revision: { kind: "candidate", candidateId: "candidate-1" },
     });
     expect(trajectory).toMatchObject({ finalDisposition: "approve", selectedMemoryIds: ["candidate-1"], toolCall: { name: "issue_sandbox_refund", arguments: { destination: "original" } } });
+    expect(trajectory.toolCall?.arguments).not.toHaveProperty("receiptId");
   });
 
   it("uses observed scenario input rather than echoing an expected tool destination", async () => {

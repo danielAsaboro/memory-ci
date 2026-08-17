@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { Client } from "pg";
 
@@ -13,6 +16,8 @@ import { bootstrapWorkspace } from "../src/services/bootstrap-workspace";
 import { evaluateCandidate } from "../src/services/evaluate-candidate";
 import { selectScenarios } from "../src/services/select-scenarios";
 import { createApiServices } from "../src/lambda/services";
+import { judgeBehavioralDiffWithBedrock } from "../src/aws/bedrock";
+import { runSandboxTrajectory } from "../src/lambda/sandbox";
 
 const apiPort = Number(process.env.STASH_E2E_API_PORT ?? "3011");
 const secret = process.env.STASH_SESSION_SECRET ?? "stash-e2e-session-secret-that-is-at-least-32-bytes";
@@ -25,6 +30,7 @@ const vector = `[${Array.from({ length: 1024 }, () => "0.01").join(",")}]`;
 const admin = new Client({ connectionString: adminUrl });
 const pool = createPool(databaseUrl);
 let draining = false;
+let artifactDirectory = "";
 
 async function seedScenario(tenantId: string, namespaceId: string) {
   await withTenantTransaction(pool, tenantId, async ({ client }) => {
@@ -61,20 +67,18 @@ async function drainEvaluations() {
             } },
             scenarios: { select: (candidateId, limit) => selectScenarios(transaction, candidateId, limit) },
             evaluations: new EvaluationRepository(transaction),
-            trajectories: { run: async (scenario, revision) => ({
-              finalDisposition: "approve" as const,
-              selectedMemoryIds: revision.kind === "candidate" ? [event.aggregate_id] : [],
-              toolCall: { name: "issue_sandbox_refund", arguments: { caseId: String(scenario.inputPayload.caseId), amount: Number(scenario.inputPayload.amount), currency: String(scenario.inputPayload.currency), destination: String(scenario.inputPayload.destination) } },
-              approvalRequired: false,
-              refused: false,
-            }) },
-            semanticJudge: async () => {
-              const candidate = await new CandidateRepository(transaction).get(event.aggregate_id);
-              return candidate?.canonicalPayload.e2eBedrockTimeout === true
+            trajectories: { run: (scenario, revision) => runSandboxTrajectory({ tenantId: event.tenant_id, candidateId: event.aggregate_id, memoryRevision: revision.kind === "baseline" ? revision.revision : 1, scenario, revision }) },
+            semanticJudge: async (input) => {
+              const candidate = await transaction.client.query<{ canonical_text: string }>("SELECT canonical_text FROM memory_candidates WHERE tenant_id=$1 AND id=$2", [event.tenant_id, event.aggregate_id]);
+              return candidate.rows[0]?.canonical_text.includes("[[BEDROCK_TIMEOUT]]")
                 ? { status: "inconclusive" as const, errorCode: "timeout" as const, modelId: "e2e-bedrock-adapter", providerRequestId: "e2e-bedrock-timeout" }
-                : { status: "complete" as const, modelId: "e2e-bedrock-adapter", providerRequestId: `e2e-bedrock-${event.id}`, value: { status: "passed" as const, reason: "Deterministic E2E Bedrock adapter receipt.", confidence: 1 } };
+                : judgeBehavioralDiffWithBedrock(input, { modelId: "e2e-bedrock-adapter", transport: { async converse(request) {
+                  const payload = JSON.parse(String(request.messages?.[0]?.content?.[0] && "text" in request.messages[0].content[0] ? request.messages[0].content[0].text : "{}")) as { behavioralDiff?: { hasBehavioralChange?: boolean } };
+                  const status = payload.behavioralDiff?.hasBehavioralChange ? "regressed" : "passed";
+                  return { $metadata: { requestId: `e2e-bedrock-${event.id}` }, output: { message: { content: [{ toolUse: { name: "record_semantic_judgment", input: { status, reason: status === "passed" ? "Local adapter found no behavioral regression." : "Local adapter found a behavioral regression.", confidence: 1 } } }] } } };
+                } } });
             },
-            artifacts: { put: async (input) => `e2e://evidence/${input.digest}.json` },
+            artifacts: { put: async (input) => { const path = join(artifactDirectory, `${input.digest}.json`); await writeFile(path, input.body, "utf8"); return `http://127.0.0.1:${apiPort}/e2e/artifacts/${input.digest}.json`; } },
             policyVersion: "e2e-v1", modelId: "e2e-bedrock-adapter", triggerEventId: event.id, id: randomUUID,
           },
         ));
@@ -102,7 +106,9 @@ async function respond(response: ServerResponse, upstream: Response) {
 export async function startE2eApi() {
   await admin.connect();
   await admin.query(`CREATE DATABASE ${databaseName}`);
-  await migrate(databaseUrl);
+  artifactDirectory = await mkdtemp(join(tmpdir(), "stash-e2e-artifacts-"));
+  const cleanup = async () => { await pool.end().catch(() => undefined); await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined); await admin.query(`DROP DATABASE IF EXISTS ${databaseName} CASCADE`).catch(() => undefined); await admin.end().catch(() => undefined); };
+  try { await migrate(databaseUrl); } catch (error) { await cleanup(); throw error; }
   const services = createApiServices(pool);
   const router = createRouter({
     auth: createWorkspaceSessionVerifier(secret),
@@ -113,6 +119,7 @@ export async function startE2eApi() {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${apiPort}`);
     if (url.pathname === "/health") { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ status: "ok" })); return; }
+    if (url.pathname.startsWith("/e2e/artifacts/") && request.method === "GET") { try { response.setHeader("content-type", "application/json"); response.end(await readFile(join(artifactDirectory, url.pathname.split("/").at(-1)!), "utf8")); } catch { response.statusCode = 404; response.end(); } return; }
     if (url.pathname === "/v1/workspaces" && request.method === "POST") {
       if (request.headers["x-stash-bootstrap-key"] !== bootstrapKey) { response.statusCode = 401; response.end(JSON.stringify({ code: "unauthorized" })); return; }
       const parsed = JSON.parse((await body(request)) || "{}");
@@ -128,8 +135,6 @@ export async function startE2eApi() {
   return async () => {
     clearInterval(interval);
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await pool.end();
-    await admin.query(`DROP DATABASE IF EXISTS ${databaseName} CASCADE`);
-    await admin.end();
+    await cleanup();
   };
 }

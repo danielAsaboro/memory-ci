@@ -6,15 +6,15 @@ import { useRef, useState } from "react";
 import { createCandidate, queryKeys, type StashApiError } from "../lib/api-client";
 import { retryFingerprint } from "../lib/retry-fingerprint";
 
-type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string };
-const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "" };
-const evaluationEmbedding = `[${Array.from({ length: 1024 }, () => "0.01").join(",")}]`;
+type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string; signature: string; publicKey: string };
+const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "", signature: "", publicKey: "" };
 
 async function digest(text: string) {
   const bytes = new TextEncoder().encode(text);
   const result = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(result)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
+const base64 = (value: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(value)));
 
 export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const client = useQueryClient();
@@ -30,9 +30,10 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
       const sourceDigest = await digest(form.sourceContent);
       return createCandidate({
         namespaceId: form.namespaceId, memoryClass: form.memoryClass, trustClass: form.trustClass,
-        canonicalText: form.canonicalText, payload: { canonicalText: form.canonicalText, e2eBedrockTimeout: form.canonicalText.includes("[[BEDROCK_TIMEOUT]]") }, embedding: evaluationEmbedding,
+        canonicalText: form.canonicalText, payload: { canonicalText: form.canonicalText },
         source: { id: sourceId.current, sourceType: "operator", content: form.sourceContent, contentDigest: sourceDigest,
-          sourceUri: form.sourceUri || undefined, signatureIdentity: form.signatureIdentity || undefined, signatureVerified: false },
+          sourceUri: form.sourceUri || undefined, signatureIdentity: form.signatureIdentity || undefined, signatureVerified: false,
+          ...(form.signature && form.publicKey ? { signatureAlgorithm: "ed25519" as const, signature: form.signature, publicKey: form.publicKey } : {}) },
       }, key.current);
     },
     onSuccess: async (receipt) => {
@@ -43,6 +44,12 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
     },
   });
   const change = (name: keyof Form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((value) => ({ ...value, [name]: event.target.type === "checkbox" ? (event.target as HTMLInputElement).checked : event.target.value }));
+  const signSource = async () => {
+    const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+    const signature = await crypto.subtle.sign("Ed25519", keys.privateKey, new TextEncoder().encode(form.sourceContent));
+    const publicKey = await crypto.subtle.exportKey("spki", keys.publicKey);
+    setForm((value) => ({ ...value, signature: base64(signature), publicKey: base64(publicKey) }));
+  };
   const valid = Boolean(form.namespaceId && form.canonicalText && form.sourceContent && form.sourceUri);
   const error = mutation.error as StashApiError | null;
   return <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="propose-memory-title"><form className="confirm-dialog" onSubmit={(event) => { event.preventDefault(); if (valid) mutation.mutate(); }}>
@@ -54,6 +61,8 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
     <label>Source URI<input aria-label="Source URI" type="url" value={form.sourceUri} onChange={change("sourceUri")} required /></label>
     <label>Source content<textarea aria-label="Source content" value={form.sourceContent} onChange={change("sourceContent")} required /></label>
     <label>Signature identity<input aria-label="Signature identity" value={form.signatureIdentity} onChange={change("signatureIdentity")} /></label>
+    <button type="button" className="button subtle" onClick={() => { void signSource(); }} disabled={!form.sourceContent}>Generate and sign source evidence</button>
+    {form.signature ? <p role="status">Source signature generated.</p> : null}
     {error ? <p role="alert">{error.message}</p> : null}{submitted ? <p>Candidate {submitted} submitted.</p> : null}
     <div><button type="button" className="button subtle" onClick={onClose}>Cancel</button><button className="button primary" disabled={!valid || mutation.isPending}>{mutation.isError ? "Retry proposal" : "Submit proposal"}</button></div>
   </form></div>;

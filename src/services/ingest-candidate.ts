@@ -4,6 +4,7 @@ import { DomainError } from "../domain/errors";
 import { candidateInputSchema, type CandidateInput } from "../contracts/candidate";
 import { canonicalJson, sha256, verifyProvenanceDigest } from "./provenance";
 import { redactCandidatePayload } from "./redaction";
+import { verifySourceSignature } from "./source-signature";
 
 type SourceInput = Readonly<{
   id: string; tenantId: string; sourceType: CandidateInput["source"]["sourceType"];
@@ -17,6 +18,7 @@ export type IngestionDependencies = Readonly<{
   candidates: { create(input: CreateCandidateInput): Promise<Candidate> };
   audit: { append(input: Record<string, unknown>): Promise<unknown> };
   outbox: { enqueue(input: { eventType: string; aggregateType: string; aggregateId: string; payload: Readonly<Record<string, unknown>> }): Promise<unknown> };
+  embeddings: { embed(text: string): Promise<string> };
   authorizeProtectedNamespace(context: TenantContext, namespaceId: string): Promise<boolean>;
   id(): string;
 }>;
@@ -55,18 +57,19 @@ export async function ingestCandidate(
   }
   const contentDigest = sha256(canonical);
 
+  const signatureVerified = verifySourceSignature(input.source);
   await dependencies.sources.upsert({
     id: input.source.id, tenantId: context.tenantId, sourceType: input.source.sourceType,
     sourceUri: input.source.sourceUri ?? null, trustClass: input.trustClass,
     contentDigest: input.source.contentDigest, signatureIdentity: input.source.signatureIdentity ?? null,
-    signatureVerified: false, validUntil: input.source.validUntil ?? null,
+    signatureVerified, validUntil: input.source.validUntil ?? null,
     submittedBy: context.principalId,
   });
   const candidate = await dependencies.candidates.create({
     id: dependencies.id(), namespaceId: input.namespaceId, lineageId: null, state: "proposed",
     memoryClass: input.memoryClass, trustClass: input.trustClass,
     canonicalPayload: redacted.payload, canonicalText: redacted.canonicalText, contentDigest,
-    sourceId: input.source.id, createdBy: context.principalId, embedding: input.embedding ?? null,
+    sourceId: input.source.id, createdBy: context.principalId, embedding: await dependencies.embeddings.embed(redacted.canonicalText),
     idempotencyKey: input.idempotencyKey,
   });
   await dependencies.audit.append({
@@ -78,5 +81,5 @@ export async function ingestCandidate(
     eventType: "candidate.proposed", aggregateType: "memory_candidate", aggregateId: candidate.id,
     payload: { tenantId: context.tenantId, namespaceId: input.namespaceId, contentDigest },
   });
-  return { id: candidate.id, state: candidate.state, contentDigest, provenanceVerified: false, redactions: redacted.redactions };
+  return { id: candidate.id, state: candidate.state, contentDigest, provenanceVerified: signatureVerified, redactions: redacted.redactions };
 }

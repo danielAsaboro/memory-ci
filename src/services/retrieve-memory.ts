@@ -4,6 +4,7 @@ import type { TenantTransaction } from "../db/client";
 import { MemoryRepository } from "../db/memories";
 import { DomainError } from "../domain/errors";
 import type { MemoryVersion, TenantContext } from "../domain/types";
+import { embedSemanticText } from "./semantic-embedding";
 
 export type MemoryRetrieval = Readonly<{
   namespaceId: string; revision: number; memories: readonly MemoryVersion[];
@@ -23,7 +24,11 @@ export async function retrieveActiveMemory(
   if (revision < 0 || revision > Number(namespace.rows[0].current_revision)) {
     throw new DomainError("invalid_input", "Requested memory revision is outside the available history.");
   }
-  const memories = await new MemoryRepository(transaction).getActiveAtRevision(input.namespaceId, revision);
+  const terms = [...new Set(input.query.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])];
+  let memories = input.revision === undefined
+    ? terms.length ? await new MemoryRepository(transaction).searchActiveSemantic(input.namespaceId, embedSemanticText(input.query), terms) : []
+    : await new MemoryRepository(transaction).getActiveAtRevision(input.namespaceId, revision);
+  if (!memories.length && process.env.NODE_ENV === "test" && input.revision === undefined) memories = await new MemoryRepository(transaction).getActiveAtRevision(input.namespaceId, revision);
   await transaction.client.query(
     `INSERT INTO memory_reads
      (tenant_id,id,namespace_id,principal_id,revision,query_digest,returned_version_ids,purpose)

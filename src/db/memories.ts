@@ -78,6 +78,17 @@ export class MemoryRepository {
     return result.rows.map((row) => ({ memory: mapMemory(row), distance: Number(row.distance) }));
   }
 
+  async searchActiveSemantic(namespaceId: string, embedding: string, terms: string[], limit = 10): Promise<MemoryVersion[]> {
+    const result = await this.transaction.client.query<MemoryRow>(
+      `SELECT id,tenant_id,namespace_id,lineage_id,candidate_id,version,revision,active,canonical_payload,content_digest,valid_from,valid_until
+       FROM memory_versions WHERE tenant_id=$1 AND namespace_id=$2 AND active
+         AND canonical_text ILIKE ANY($4::STRING[])
+       ORDER BY embedding <=> $3::VECTOR LIMIT $5`,
+      [this.transaction.tenantId, namespaceId, embedding, terms.map((term) => `%${term}%`), limit],
+    );
+    return result.rows.map(mapMemory);
+  }
+
   async promote(input: {
     candidateId: string; reviewId: string; actorId: string; stableKey: string;
     reason: string; idempotencyKey: string;

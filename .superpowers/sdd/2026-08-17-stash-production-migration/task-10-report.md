@@ -31,6 +31,16 @@ The only deterministic double is the Bedrock semantic-judge adapter boundary in 
 
 ## Self-review and concerns
 
+## Fix Round 1
+
+- RED/GREEN: `src/services/ingest-candidate.test.ts` now proves Ed25519 verification over exact source content and proves a tampered body is not verified. The product dialog generates an Ed25519 browser keypair/signature; the server, not the client, verifies it.
+- The proposal UI no longer submits a fixed embedding or an E2E timeout field. The server generates a normalized token-semantic vector, and retrieval uses that vector with a nonmatching-query negative assertion.
+- The E2E harness now calls the actual sandbox trajectory executor and writes canonical evaluation artifacts to a real temporary local artifact store. The browser retrieves and validates the persisted artifact; only the Bedrock transport is locally adapted, including its marker-driven timeout.
+- Full E2E after the correction: `npm run test:e2e` — 29 passed, 1 intentionally skipped (40.5s).
+- The lexical embedding implementation is selected only for `STASH_E2E=1` or `NODE_ENV=test`; production requires `BEDROCK_EMBEDDING_MODEL_ID` and fails closed otherwise. Its selection test is in `src/services/embedding-provider.test.ts`.
+- Follow-up verification after adding the strict provider selection is still required for the complete release chain.
+- Post-final-change release chain: `npm run verify && npm run test:e2e && npm run infra:validate && npm run infra:build && npm run production:audit` — PASS. Verify: 32 unit files / 216 tests and 6 integration files / 28 tests; E2E: 29 passed, 1 intentional skip (39.2s); SAM validate/build and production audit passed.
+
 - Session security remains strict: normal proxy mutations require same-origin requests and a verified workspace-session cookie. The E2E-only cookie exception is gated by `STASH_E2E=1` so local HTTP test cookies can be exercised; it is not enabled for production.
 - The test harness gets its Cockroach admin URL from the existing integration-test configuration and creates/drops a unique database; it does not hardcode deployment credentials.
 - Next emits pre-existing advisory warnings about `experimental.typedRoutes` and multiple lockfiles in this worktree. They do not fail the release gates.

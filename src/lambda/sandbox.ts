@@ -31,7 +31,7 @@ export async function runSandboxTrajectory(input: {
   return {
     finalDisposition: receipt.status === "simulated" ? "approve" : "abstain",
     selectedMemoryIds: input.revision.kind === "candidate" ? [input.candidateId] : [],
-    toolCall: { name: toolName, arguments: { amount: receipt.amount, currency: receipt.currency, destination: receipt.destination, caseId: receipt.caseId, receiptId: receipt.id } },
+    toolCall: { name: toolName, arguments: { amount: receipt.amount, currency: receipt.currency, destination: receipt.destination, caseId: receipt.caseId } },
     approvalRequired: false, refused: false,
   };
 }

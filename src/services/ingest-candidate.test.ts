@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -38,6 +38,7 @@ function createHarness(overrides: Partial<IngestionDependencies> = {}) {
     },
     audit: { async append(input) { calls.audit.push(input); return undefined; } },
     outbox: { async enqueue(input) { calls.outbox.push(input); return undefined; } },
+    embeddings: { async embed() { return `[${Array.from({ length: 1024 }, () => "0").join(",")}]`; } },
     authorizeProtectedNamespace: async () => false,
     id: () => randomUUID(),
     ...overrides,
@@ -62,6 +63,37 @@ const baseInput = {
 };
 
 describe("ingestCandidate", () => {
+  it("verifies an Ed25519 signature over the exact submitted source evidence", async () => {
+    const { calls, dependencies } = createHarness();
+    const content = "Signed threshold evidence: refunds above $150 require review.";
+    const keys = generateKeyPairSync("ed25519");
+    const signature = sign(null, Buffer.from(content), keys.privateKey).toString("base64");
+    const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+
+    const receipt = await ingestCandidate(context, {
+      ...baseInput,
+      source: { ...baseInput.source, content, contentDigest: sha256(content), signature, publicKey, signatureAlgorithm: "ed25519" },
+    }, dependencies);
+
+    expect(receipt.provenanceVerified).toBe(true);
+    expect(calls.source[0]).toMatchObject({ signatureVerified: true });
+  });
+
+  it("does not mark tampered signed evidence as verified", async () => {
+    const { calls, dependencies } = createHarness();
+    const signedContent = "Signed threshold evidence: refunds above $150 require review.";
+    const keys = generateKeyPairSync("ed25519");
+    const signature = sign(null, Buffer.from(signedContent), keys.privateKey).toString("base64");
+    const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+
+    const receipt = await ingestCandidate(context, {
+      ...baseInput,
+      source: { ...baseInput.source, content: `${signedContent} Tampered.`, contentDigest: sha256(`${signedContent} Tampered.`), signature, publicKey, signatureAlgorithm: "ed25519" },
+    }, dependencies);
+
+    expect(receipt.provenanceVerified).toBe(false);
+    expect(calls.source[0]).toMatchObject({ signatureVerified: false });
+  });
   it("canonicalizes key order, verifies provenance, and writes candidate, audit, and outbox receipts", async () => {
     const { calls, dependencies } = createHarness();
     const sourceDigest = sha256(baseInput.source.content);
