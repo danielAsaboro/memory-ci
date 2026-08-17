@@ -152,6 +152,7 @@ Deploy the R3 SAM update before collecting evidence so the EventBridge observati
 
 - Focused evidence/parameter/smoke tests, typecheck, lint, and SAM validation passed before commit. No AWS live invocation, deployment, or evidence success claim was made.
 - Final collector independently reads Bedrock model-invocation logging configuration and requires its exact stack output delivery role ARN, `/aws/bedrock/stash-production-invocations` group, and text/embedding flags before accepting Bedrock evidence.
+- Final post-ETag full gate passed: `npm run verify` (258 unit tests/41 files; 30 integration tests/6 files), SAM validation/build, production audit (`{"ok":true,"violations":[]}`), and diff/status checks.
 - Final R4 gate: `npm run verify` passed (257 unit tests/41 files; 30 integration tests/6 files), followed by passing SAM validation/build and production audit.
 
 ### R4 self-check
