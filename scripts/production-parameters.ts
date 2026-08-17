@@ -2,7 +2,7 @@ import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 export const productionParameterNames = [
   "DatabaseSecretArn", "BedrockModelId", "BedrockEmbeddingModelId", "StashSessionSecret", "StashBootstrapKey", "StashTrustedSourceKeys", "AllowedOrigin",
@@ -48,9 +48,22 @@ export function validateProductionParameters(value: unknown, deploymentIdentity?
   return Object.fromEntries(productionParameterNames.map((name) => [name, record[name]])) as ProductionParameters;
 }
 
-export function buildSamDeployArgs(parameterFile: string): string[] {
-  if (!parameterFile || parameterFile.includes("\0")) throw new Error("Production parameter file path is invalid.");
-  return ["deploy", "--template-file", ".aws-sam/build/template.yaml", "--stack-name", "stash-production", "--region", "us-east-1", "--capabilities", "CAPABILITY_IAM", "--resolve-s3", "--no-confirm-changeset", "--parameter-overrides", `file://${parameterFile}`];
+export function buildSamDeployConfig(parameters: ProductionParameters): string {
+  const quote = (value: string) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  const parameterOverrides = productionParameterNames.map((name) => `${name}=${quote(parameters[name])}`).join(" ");
+  return stringify({
+    version: 0.1,
+    production: { deploy: { parameters: {
+      template_file: ".aws-sam/build/template.yaml", stack_name: "stash-production", region: "us-east-1",
+      capabilities: "CAPABILITY_IAM", resolve_s3: true, confirm_changeset: false, fail_on_empty_changeset: false,
+      parameter_overrides: parameterOverrides,
+    } } },
+  });
+}
+
+export function buildSamDeployArgs(configFile: string): string[] {
+  if (!configFile || configFile.includes("\0")) throw new Error("Production SAM config file path is invalid.");
+  return ["deploy", "--config-file", configFile, "--config-env", "production"];
 }
 
 export async function readProductionParameters(path: string): Promise<ProductionParameters> {

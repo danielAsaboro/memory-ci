@@ -1,7 +1,10 @@
 import { execFile, spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { buildSamDeployArgs, readProductionParameters, validateProductionParameters } from "./production-parameters";
+import { buildSamDeployArgs, buildSamDeployConfig, readProductionParameters, validateProductionParameters } from "./production-parameters";
 
 function commandJson(command: string, args: string[]): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => execFile(command, args, { timeout: 30_000, maxBuffer: 100_000 }, (error, stdout) => {
@@ -20,8 +23,16 @@ async function main(): Promise<void> {
   const identity = await commandJson("aws", ["sts", "get-caller-identity", "--output", "json"]);
   if (typeof identity.Account !== "string") throw new Error("Deployment identity could not be verified.");
   validateProductionParameters(parameters, { accountId: identity.Account, region: "us-east-1" });
-  const child = spawn("sam", buildSamDeployArgs(parameterFile), { stdio: "inherit" });
-  const code = await new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "stash-sam-deploy-"));
+  const configFile = join(temporaryRoot, "samconfig.yaml");
+  let code: number | null;
+  try {
+    await writeFile(configFile, buildSamDeployConfig(parameters), { flag: "wx", mode: 0o600 });
+    const child = spawn("sam", buildSamDeployArgs(configFile), { stdio: "inherit" });
+    code = await new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
   if (code !== 0) throw new Error("SAM production deployment failed.");
   const described = await commandJson("aws", ["cloudformation", "describe-stacks", "--stack-name", "stash-production", "--region", "us-east-1", "--output", "json"]);
   const stack = Array.isArray(described.Stacks) ? described.Stacks[0] : undefined;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { assertTemplateParameterNames, buildSamDeployArgs, productionParameterNames, validateProductionParameters } from "./production-parameters";
+import { parse } from "yaml";
+
+import { assertTemplateParameterNames, buildSamDeployArgs, buildSamDeployConfig, productionParameterNames, validateProductionParameters } from "./production-parameters";
 
 describe("production SAM parameters", () => {
   const valid = {
@@ -35,9 +37,14 @@ describe("production SAM parameters", () => {
     expect(() => validateProductionParameters({ ...valid, StashTrustedSourceKeys: "[]" })).toThrow(/trusted/i);
   });
 
-  it("passes only the parameter file path to SAM, never parameter values", () => {
-    const args = buildSamDeployArgs("infra/parameters.production.json");
-    expect(args).toContain("file://infra/parameters.production.json");
+  it("passes only a temporary SAM config path to the process and encodes values inside that file", () => {
+    const args = buildSamDeployArgs("/tmp/stash-production-samconfig.yaml");
+    expect(args).toContain("/tmp/stash-production-samconfig.yaml");
     expect(args.join(" ")).not.toContain("server-only-secret");
+    expect(args).not.toContain("--parameter-overrides");
+
+    const config = parse(buildSamDeployConfig(valid));
+    expect(config.production.deploy.parameters.parameter_overrides).toContain(`StashSessionSecret="${valid.StashSessionSecret}"`);
+    expect(config.production.deploy.parameters.parameter_overrides).toContain(`StashTrustedSourceKeys="[{\\"identity\\":\\"owner\\"`);
   });
 });
