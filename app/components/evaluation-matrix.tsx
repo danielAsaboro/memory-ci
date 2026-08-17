@@ -6,7 +6,7 @@ import { EmptyState } from "./async-state";
 export function EvaluationMatrix({ evaluations }: { evaluations: EvaluationDetail[] }) {
   const results = evaluations.flatMap((evaluation) => evaluation.results.map((result) => ({ evaluation, result })));
   return <section className="panel">
-    <div className="panel-heading"><div><span className="eyebrow">Counterfactual suite</span><h2>Scenario matrix</h2></div><span className={results.some(({ result }) => result.status === "failed" || result.status === "regressed") ? "readiness" : "readiness complete"}>{results.length} result{results.length === 1 ? "" : "s"}</span></div>
+    <div className="panel-heading"><div><span className="eyebrow">Counterfactual suite</span><h2>Scenario matrix</h2></div><span className={results.length > 0 && !results.some(({ result }) => result.status === "failed" || result.status === "regressed") ? "readiness complete" : "readiness"}>{results.length} result{results.length === 1 ? "" : "s"}</span></div>
     {/* A horizontally scrollable data region must be keyboard focusable. */}
     {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
     <div className="evaluation-table" tabIndex={0} aria-label="Evaluation scenarios; scroll horizontally for all columns">

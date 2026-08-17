@@ -4,7 +4,6 @@ import { ArrowUpRight, Filter } from "lucide-react";
 import { useState } from "react";
 
 import type { CandidateSummary } from "../../src/contracts/dashboard";
-import { EmptyState } from "./async-state";
 
 export function ChangeQueue({ candidates }: { candidates: CandidateSummary[] }) {
   const [state, setState] = useState("all");
@@ -16,7 +15,7 @@ export function ChangeQueue({ candidates }: { candidates: CandidateSummary[] }) 
         <span role="cell"><span className="tag">{candidate.memoryClass}</span></span><span role="cell"><span className={`risk-badge ${candidate.trustClass === "untrusted" ? "critical" : "low"}`}>{candidate.trustClass}</span></span>
         <span role="cell" className={`state-text ${candidate.state}`}>{candidate.state.replaceAll("_", " ")}</span><span role="cell">{candidate.blockingFindingCount ? `${candidate.blockingFindingCount} blocking` : `${candidate.findingCount} recorded`}</span><span role="cell"><a href={`/changes/${candidate.id}`} aria-label={`Open ${candidate.canonicalText}`}><ArrowUpRight size={14} /></a></span>
       </div>)}
-      {!visible.length ? <div className="queue-empty"><EmptyState title="No memory changes are waiting for review" detail="When a candidate is submitted, its live evidence will appear here." /></div> : null}
+      {!visible.length ? <div role="row" className="queue-row queue-empty"><span role="cell" className="queue-title"><strong>No memory changes are waiting for review</strong><small>When a candidate is submitted, its live evidence will appear here.</small></span><span role="cell" /><span role="cell" /><span role="cell" /><span role="cell" /><span role="cell" /></div> : null}
     </div>
   </section>;
 }

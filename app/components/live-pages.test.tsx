@@ -6,10 +6,14 @@ import { type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AuditPage from "../audit/page";
+import AgentsPage from "../agents/page";
 import ChangesPage from "../changes/page";
-import EvaluationsPage from "../evaluations/page";
 import MemoryPage from "../memory/page";
 import OverviewPage from "../overview/page";
+import OnboardingPage from "../onboarding/page";
+import SettingsPage from "../settings/page";
+import { TerminalError } from "./async-state";
+import { StashApiError } from "../lib/api-client";
 import { WorkspaceProvider } from "../lib/workspace-provider";
 
 const ids = {
@@ -84,8 +88,21 @@ describe("live product pages", () => {
 
   it("does not mark a degraded provider as healthy", async () => {
     installResponses({ "/api/stash/v1/workspace/status": new Response(JSON.stringify({ workspace: { id: ids.workspace, name: "Mosaic Operations" }, namespaceCount: 1, integrations: { cockroach: { state: "unavailable", detail: "Connection unavailable" }, aws: { state: "blocked", detail: "Credentials required" }, agent: { state: "pending", detail: "Waiting" } } }), { headers: { "content-type": "application/json" } }) });
-    render(<LiveProvider><EvaluationsPage /></LiveProvider>);
+    render(<><LiveProvider><SettingsPage /></LiveProvider><LiveProvider><OnboardingPage /></LiveProvider></>);
+    expect(await screen.findByText("Provider attention required")).toBeInTheDocument();
+    expect(screen.getByText("unavailable")).not.toHaveClass("low");
+    expect(screen.getByText("blocked")).not.toHaveClass("low");
+  });
 
-    expect(await screen.findByText(/No evaluation runs are available/i)).toBeInTheDocument();
+  it("renders live agents factually", async () => {
+    installResponses({ "/api/stash/v1/agents": new Response(JSON.stringify([{ id: ids.author, name: "Verifier", namespaceIds: [ids.namespace], reads: 8, lastReadAt: "2026-08-17T10:00:00.000Z" }]), { headers: { "content-type": "application/json" } }) });
+    render(<LiveProvider><AgentsPage /></LiveProvider>);
+    expect(await screen.findByText("Verifier")).toBeInTheDocument();
+    expect(screen.queryByText("Reporting")).not.toBeInTheDocument();
+  });
+
+  it("renders only the safe API error message and request ID", () => {
+    render(<TerminalError title="Request unavailable" error={new StashApiError({ code: "provider_unavailable", message: "Stash is unavailable.", requestId: "safe-request", status: 502 })} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Stash is unavailable. Request ID: safe-request");
   });
 });

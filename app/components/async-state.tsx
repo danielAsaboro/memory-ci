@@ -7,9 +7,9 @@ import { StashApiError } from "../lib/api-client";
 import { useWorkspace } from "../lib/workspace-provider";
 
 export function WorkspaceBoundary({ children }: { children: (workspaceId: string) => ReactNode }) {
-  const { workspace, state } = useWorkspace();
+  const { workspace, state, error, retry } = useWorkspace();
   if (state === "loading") return <AsyncSkeleton label="Connecting to the workspace" />;
-  if (state === "error" || !workspace) return <TerminalError title="Workspace unavailable" error={null} />;
+  if (state === "error" || !workspace) return <TerminalError title="Workspace unavailable" error={error} onRetry={retry} />;
   return <>{children(workspace.tenantId)}</>;
 }
 
@@ -23,9 +23,10 @@ export function EmptyState({ title, detail, action }: { title: string; detail: s
 
 export function TerminalError({ title, error, onRetry }: { title: string; error: unknown; onRetry?: () => void }) {
   const requestId = error instanceof StashApiError ? error.requestId : "unknown";
-  return <section className="empty-panel error-panel" role="alert"><AlertTriangle aria-hidden="true" /><h2>{title}</h2><p>The live data could not be loaded. Request ID: {requestId}</p>{onRetry ? <button className="button secondary" onClick={onRetry}><RefreshCw size={14} />Try again</button> : null}</section>;
+  const message = error instanceof StashApiError ? error.message : "The live data could not be loaded.";
+  return <section className="empty-panel error-panel" role="alert"><AlertTriangle aria-hidden="true" /><h2>{title}</h2><p>{message} Request ID: {requestId}</p>{onRetry ? <button className="button secondary" onClick={onRetry}><RefreshCw size={14} />Try again</button> : null}</section>;
 }
 
 export function ProviderDegraded({ detail }: { detail: string }) {
-  return <div className="sandbox-banner" role="status"><AlertTriangle size={14} aria-hidden="true" /><span>Provider attention required</span> {detail}</div>;
+  return <div className="sandbox-banner provider-degraded" role="status"><AlertTriangle size={14} aria-hidden="true" /><span>Provider attention required</span> {detail}</div>;
 }

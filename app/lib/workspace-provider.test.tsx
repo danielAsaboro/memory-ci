@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceProvider, useWorkspace } from "./workspace-provider";
 
 function WorkspaceState() {
-  const { state } = useWorkspace();
-  return <output>{state}</output>;
+  const { state, retry } = useWorkspace();
+  return <><output>{state}</output><button onClick={retry}>Retry workspace</button></>;
 }
 
 describe("WorkspaceProvider", () => {
@@ -57,5 +57,17 @@ describe("WorkspaceProvider", () => {
     render(<QueryClientProvider client={new QueryClient()}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider>);
 
     expect(await screen.findByText("error")).toBeInTheDocument();
+  });
+
+  it("clears a failed bootstrap and retries with a fresh request", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantId: "tenant-retry", principalId: "principal-retry", roles: ["admin"], workspaceName: "Recovered" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<StrictMode><QueryClientProvider client={new QueryClient()}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider></StrictMode>);
+    expect(await screen.findByText("error")).toBeInTheDocument();
+    screen.getByRole("button", { name: "Retry workspace" }).click();
+    expect(await screen.findByText("ready")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { workspaceBootstrapSchema, type WorkspaceMetadata } from "../../src/contracts/workspace";
 
@@ -10,6 +10,7 @@ type WorkspaceContextValue = {
   workspace: WorkspaceMetadata | null;
   state: WorkspaceState;
   error: Error | null;
+  retry: () => void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -18,7 +19,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const bootstrap = useRef<Promise<{ workspace: WorkspaceMetadata; created: boolean }> | null>(null);
   const invalidated = useRef(false);
-  const [value, setValue] = useState<WorkspaceContextValue>({ workspace: null, state: "loading", error: null });
+  const [attemptId, setAttemptId] = useState(0);
+  const [value, setValue] = useState<Omit<WorkspaceContextValue, "retry">>({ workspace: null, state: "loading", error: null });
+
+  const retry = useCallback(() => {
+    bootstrap.current = null;
+    setValue({ workspace: null, state: "loading", error: null });
+    setAttemptId((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     let current = true;
@@ -31,12 +39,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       if (current) setValue({ workspace, state: "ready", error: null });
     }).catch((error: unknown) => {
+      if (bootstrap.current === attempt) bootstrap.current = null;
       if (current) setValue({ workspace: null, state: "error", error: toError(error) });
     });
     return () => { current = false; };
-  }, [queryClient]);
+  }, [attemptId, queryClient]);
 
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return <WorkspaceContext.Provider value={{ ...value, retry }}>{children}</WorkspaceContext.Provider>;
 }
 
 export function useWorkspace(): WorkspaceContextValue {

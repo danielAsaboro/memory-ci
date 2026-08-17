@@ -24,6 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const { workspace, state } = useWorkspace();
   const workspaceName = workspace?.workspaceName ?? "Connecting workspace";
+  const connectionLabel = state === "ready" ? "Workspace connected" : state === "error" ? "Workspace unavailable" : "Connecting workspace";
   const initials = workspaceName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "…";
   return (
     <div className="app-frame">
@@ -52,7 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar-bottom">
           <Link href="/onboarding" className="nav-link"><ShieldCheck size={17} />Setup</Link>
           <Link href="/settings" className="nav-link"><Settings size={17} />Settings</Link>
-          <div className="environment-card"><span className="live-dot" /><span>Runtime status</span><small>Workspace connection pending</small></div>
+          <div className="environment-card"><span className="live-dot" /><span>Runtime status</span><small>{connectionLabel}</small></div>
         </div>
       </aside>
       {open ? <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setOpen(false)} /> : null}
@@ -60,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={20} /></button>
           <div className="global-search"><Search size={16} aria-hidden="true" /><span>Search memory, changes, agents…</span><kbd>⌘ K</kbd></div>
-          <div className="topbar-actions"><span className={`status-chip ${state === "ready" ? "good" : "pending"}`}><span />{state === "ready" ? "Workspace connected" : "Runtime status pending"}</span><span className="avatar">{initials}</span></div>
+          <div className="topbar-actions"><span className={`status-chip ${state === "ready" ? "good" : state === "error" ? "risk" : "pending"}`}><span />{connectionLabel}</span><span className="avatar">{initials}</span></div>
         </header>
         <main className="page-shell">{children}</main>
       </div>
