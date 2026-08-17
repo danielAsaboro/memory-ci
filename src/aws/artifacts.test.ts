@@ -18,7 +18,7 @@ describe("S3 evidence artifacts", () => {
     const receipt = await putArtifact(transport, "memory-ci-evidence", { body, digest, mediaType: "application/json" });
     expect(receipt).toEqual({
       uri: `s3://memory-ci-evidence/artifacts/${digest}.json`, digest,
-      versionId: "version-1", providerRequestId: "s3-request-1",
+      versionId: "version-1", providerRequestId: "s3-request-1", etag: '"etag-1"',
     });
     expect(request).toMatchObject({
       Bucket: "memory-ci-evidence", Key: `artifacts/${digest}.json`,
