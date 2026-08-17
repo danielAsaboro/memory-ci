@@ -112,4 +112,11 @@ describe("evaluateCandidate", () => {
     expect(calls.results).toEqual([]);
     expect(calls.transitions).toEqual([]);
   });
+
+  it("persists an inconclusive terminal run and quarantines when no scenarios match", async () => {
+    const { calls, dependencies, status } = harness(baseline);
+    dependencies.scenarios.select = async () => [];
+    await expect(evaluateCandidate(context, candidate.id, dependencies)).resolves.toMatchObject({ status: "inconclusive", scenarioCount: 0 });
+    expect(status()).toBe("inconclusive"); expect(calls.transitions).toEqual(["quarantined"]);
+  });
 });

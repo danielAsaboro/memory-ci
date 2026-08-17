@@ -37,6 +37,7 @@ export type EvaluationDependencies = Readonly<{
   artifacts: { put(input: { digest: string; body: string; mediaType: "application/json" }): Promise<string> };
   policyVersion: string;
   modelId: string;
+  providerRequestId?: string;
   id(): string;
   scenarioLimit?: number;
 }>;
@@ -61,7 +62,11 @@ export async function evaluateCandidate(
     id: dependencies.id(), candidateId, baselineRevision, policyVersion: dependencies.policyVersion,
   });
   const scenarios = await dependencies.scenarios.select(candidateId, dependencies.scenarioLimit ?? 20);
-  if (!scenarios.length) throw new DomainError("inconclusive", "No active evaluation scenarios matched this candidate.");
+  if (!scenarios.length) {
+    await dependencies.evaluations.completeRun(run.id, "inconclusive", { modelId: dependencies.modelId, providerRequestId: dependencies.providerRequestId });
+    await dependencies.candidates.transition(candidateId, "quarantined");
+    return { id: run.id, candidateId, status: "inconclusive", baselineRevision, scenarioCount: 0 };
+  }
 
   let aggregate: keyof typeof severity = "passed";
   let lastProviderRequestId: string | undefined;
@@ -98,7 +103,7 @@ export async function evaluateCandidate(
   }
 
   await dependencies.evaluations.completeRun(run.id, aggregate, {
-    modelId: dependencies.modelId, providerRequestId: lastProviderRequestId,
+    modelId: dependencies.modelId, providerRequestId: dependencies.providerRequestId ?? lastProviderRequestId,
   });
   await dependencies.candidates.transition(candidateId, aggregate === "passed" ? "review_required" : "quarantined");
   return { id: run.id, candidateId, status: aggregate, baselineRevision, scenarioCount: scenarios.length };
