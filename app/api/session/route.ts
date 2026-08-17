@@ -13,6 +13,7 @@ import {
 } from "../../../src/contracts/workspace";
 
 const COOKIE_NAME = "stash_session";
+const BOOTSTRAP_TIMEOUT_MS = 10_000;
 
 type SessionConfig = {
   apiBaseUrl: string;
@@ -39,10 +40,13 @@ export async function POST(): Promise<Response> {
     }
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
   let bootstrapResponse: Response;
   try {
     bootstrapResponse = await fetch(`${config.apiBaseUrl}/v1/workspaces`, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         "Idempotency-Key": crypto.randomUUID(),
@@ -51,6 +55,8 @@ export async function POST(): Promise<Response> {
     });
   } catch {
     return unavailable(502, "Workspace bootstrap is unavailable.");
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!bootstrapResponse.ok) {

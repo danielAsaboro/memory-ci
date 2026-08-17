@@ -22,6 +22,7 @@ const workspace = {
 
 describe("POST /api/session", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -96,6 +97,67 @@ describe("POST /api/session", () => {
 
     await expect(response.json()).resolves.toEqual(workspace);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("replaces a stale workspace cookie through a fresh bootstrap", async () => {
+    cookieStore.get.mockReturnValue({ value: "stale-session-token" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(workspace), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST();
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual(workspace);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(response.headers.get("set-cookie")).toContain("stash_session=");
+  });
+
+  it.each([
+    ["invalid JSON", () => new Response("{", { status: 201 })],
+    ["missing workspace claims", () => new Response(JSON.stringify({ tenantId: "tenant-1" }), { status: 201 })],
+  ])("fails closed when the bootstrap provider returns %s", async (_label, createResponse) => {
+    const fetchMock = vi.fn().mockResolvedValue(createResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST();
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      code: "provider_unavailable",
+      message: "Workspace bootstrap returned an invalid response.",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("aborts a hung bootstrap after 10 seconds without setting a session cookie", async () => {
+    let timeoutCallback: (() => void) | undefined;
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+      if (delay === 10_000) timeoutCallback = callback as () => void;
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    });
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      (init?.signal as AbortSignal).addEventListener("abort", () => reject(
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+      ), { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const responsePromise = POST();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 10_000);
+    expect(timeoutCallback).toBeTypeOf("function");
+    timeoutCallback?.();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      code: "provider_unavailable",
+      message: "Workspace bootstrap is unavailable.",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("fails closed when the server API URL is malformed", async () => {
