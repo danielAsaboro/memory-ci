@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { createCandidate, queryKeys, type StashApiError } from "../lib/api-client";
+import { retryFingerprint } from "../lib/retry-fingerprint";
 
 type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string };
 const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "" };
@@ -23,7 +24,7 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
   const [submitted, setSubmitted] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: async () => {
-      const nextFingerprint = JSON.stringify(form); if (fingerprint.current !== nextFingerprint) { fingerprint.current = nextFingerprint; key.current = null; sourceId.current = null; }
+      const nextFingerprint = retryFingerprint(form); if (fingerprint.current !== nextFingerprint) { fingerprint.current = nextFingerprint; key.current = null; sourceId.current = null; }
       key.current ??= crypto.randomUUID(); sourceId.current ??= crypto.randomUUID();
       const sourceDigest = await digest(form.sourceContent);
       return createCandidate({

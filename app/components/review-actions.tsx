@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 
 import type { CandidateSummary, EvaluationSummary } from "../../src/contracts/dashboard";
 import { getEvaluation, getEvaluations, promoteCandidate, queryKeys, requestEvaluation, screenCandidate, StashApiError, submitReview } from "../lib/api-client";
+import { retryFingerprint } from "../lib/retry-fingerprint";
 
 const terminal = new Set(["passed", "regressed", "inconclusive", "failed"]);
 const delays = [1_000, 2_000, 4_000] as const;
@@ -24,10 +25,13 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
   const scopedWorkspace = workspaceId ?? "legacy";
   const client = useQueryClient();
   const [reason, setReason] = useState(""); const [stableKey, setStableKey] = useState(""); const [notice, setNotice] = useState<string | null>(null);
-  const [polled, setPolled] = useState<EvaluationSummary | null>(evaluation ?? null); const [evaluationId, setEvaluationId] = useState<string | null>(evaluation?.id ?? candidate.latestEvaluationId); const [reviewId, setReviewId] = useState<string | null>(candidate.latestApprovedReviewId);
+  const authoritativeEvaluationId = candidate.latestEvaluationId ?? evaluation?.id ?? null;
+  const authoritativeEvaluation = evaluation?.id === authoritativeEvaluationId ? evaluation : null;
+  const [polled, setPolled] = useState<EvaluationSummary | null>(null); const [evaluationId, setEvaluationId] = useState<string | null>(null); const [evaluationRequestBaseline, setEvaluationRequestBaseline] = useState<{ id: string | null } | null>(null);
+  const [submittedReviewId, setSubmittedReviewId] = useState<string | null>(null); const [staleReviewId, setStaleReviewId] = useState<string | null>(null);
   const screenKey = useRef<string | null>(null); const evaluateKey = useRef<string | null>(null); const reviewKey = useRef<string | null>(null); const promoteKey = useRef<string | null>(null);
   const reviewFingerprint = useRef<string | null>(null); const promoteFingerprint = useRef<string | null>(null);
-  const pollDeadline = useRef<{ candidateId: string; deadline: number } | null>(null);
+  const pollDeadline = useRef<{ candidateId: string; evaluationId: string | null; deadline: number } | null>(null);
   const idempotencyKey = (reference: MutableRefObject<string | null>) => reference.current ??= crypto.randomUUID();
   const keyedFor = (key: MutableRefObject<string | null>, fingerprint: MutableRefObject<string | null>, value: string) => { if (fingerprint.current !== value) { fingerprint.current = value; key.current = null; } return idempotencyKey(key); };
   const invalidate = useCallback(async (refetch = false) => { await Promise.all([
@@ -39,27 +43,55 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
     client.refetchQueries({ queryKey: queryKeys.candidate(scopedWorkspace, candidate.id), type: "active" }),
     client.refetchQueries({ queryKey: queryKeys.evaluations(scopedWorkspace), type: "active" }),
   ]); }, [candidate.id, candidate.namespaceId, client, scopedWorkspace]);
-  const currentEvidence = polled ?? evaluation;
+  const awaitingNewEvaluation = evaluationRequestBaseline !== null && evaluationRequestBaseline.id === authoritativeEvaluationId;
+  const effectiveEvaluationId = awaitingNewEvaluation ? evaluationId : authoritativeEvaluationId ?? evaluationId;
+  const currentEvidence = awaitingNewEvaluation ? (polled?.id === effectiveEvaluationId ? polled : null) : authoritativeEvaluation ?? (polled?.id === effectiveEvaluationId ? polled : null);
+  const currentEvidenceStatus = currentEvidence?.status;
+  const reviewId = candidate.latestApprovedReviewId && candidate.latestApprovedReviewId !== staleReviewId ? candidate.latestApprovedReviewId : submittedReviewId;
   const blocked = Boolean(forcedBlocked) || candidate.state === "quarantined" || candidate.blockingFindingCount > 0 || !currentEvidence || currentEvidence.status !== "passed" || !currentEvidence.completedAt;
   const screen = useMutation({ mutationFn: () => screenCandidate(candidate.id, idempotencyKey(screenKey)), onSuccess: async (receipt) => { setNotice(`Screened ${receipt.candidateId}: ${receipt.state}.`); await invalidate(); }, onError: (error) => setNotice(errorNotice(error, "Screening is unavailable.")) });
-  const evaluate = useMutation({ mutationFn: () => { pollDeadline.current = { candidateId: candidate.id, deadline: Date.now() + 90_000 }; return requestEvaluation(candidate.id, idempotencyKey(evaluateKey)); }, onSuccess: () => { setNotice("Evaluation queued. Waiting for evidence receipt."); void invalidate(); }, onError: (error) => setNotice(errorNotice(error, "Evaluation is unavailable.")) });
-  const recoverStaleReview = () => { setReviewId(null); reviewKey.current = null; promoteKey.current = null; setNotice("The review evidence is stale. Request a new review after evidence refreshes."); void invalidate(true); };
-  const review = useMutation({ mutationFn: (decision: "approved" | "rejected" | "quarantined") => submitReview(candidate.id, { evaluationRunId: evaluationId ?? currentEvidence!.id, decision, reason }, keyedFor(reviewKey, reviewFingerprint, `${evaluationId ?? currentEvidence!.id}:${decision}:${reason}`)), onSuccess: async (receipt) => { setReviewId(receipt.reviewId); setNotice(`Review ${receipt.decision}; request ${receipt.reviewId}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Review is unavailable.")); } });
-  const promote = useMutation({ mutationFn: () => promoteCandidate(candidate.id, { reviewId: reviewId!, stableKey, reason }, keyedFor(promoteKey, promoteFingerprint, `${reviewId}:${stableKey}:${reason}`)), onSuccess: async (receipt) => { setNotice(`Active memory revision ${receipt.revision}; version ${receipt.version}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Promotion is unavailable.")); } });
+  const evaluate = useMutation({ mutationFn: () => { pollDeadline.current = { candidateId: candidate.id, evaluationId: null, deadline: Date.now() + 90_000 }; return requestEvaluation(candidate.id, idempotencyKey(evaluateKey)); }, onSuccess: () => { setEvaluationRequestBaseline({ id: authoritativeEvaluationId }); setEvaluationId(null); setPolled(null); setNotice("Evaluation queued. Waiting for evidence receipt."); void invalidate(); }, onError: (error) => { pollDeadline.current = null; setNotice(errorNotice(error, "Evaluation is unavailable.")); } });
+  const recoverStaleReview = () => { setSubmittedReviewId(null); setStaleReviewId(candidate.latestApprovedReviewId); reviewKey.current = null; promoteKey.current = null; setNotice("The review evidence is stale. Request a new review after evidence refreshes."); void invalidate(true); };
+  const review = useMutation({ mutationFn: (decision: "approved" | "rejected" | "quarantined") => { const input = { evaluationRunId: effectiveEvaluationId ?? currentEvidence!.id, decision, reason }; return submitReview(candidate.id, input, keyedFor(reviewKey, reviewFingerprint, retryFingerprint(input))); }, onSuccess: async (receipt) => { setSubmittedReviewId(receipt.reviewId); setStaleReviewId(null); setNotice(`Review ${receipt.decision}; request ${receipt.reviewId}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Review is unavailable.")); } });
+  const promote = useMutation({ mutationFn: () => { const input = { reviewId: reviewId!, stableKey, reason }; return promoteCandidate(candidate.id, input, keyedFor(promoteKey, promoteFingerprint, retryFingerprint(input))); }, onSuccess: async (receipt) => { setNotice(`Active memory revision ${receipt.revision}; version ${receipt.version}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Promotion is unavailable.")); } });
   useEffect(() => {
-    if (!(evaluate.isSuccess || candidate.state === "evaluating") || terminal.has(polled?.status ?? "")) return;
-    if (!pollDeadline.current || pollDeadline.current.candidateId !== candidate.id) pollDeadline.current = { candidateId: candidate.id, deadline: Date.now() + 90_000 };
-    let active = true; let attempt = 0; const deadline = pollDeadline.current.deadline; const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;
-    const schedule = (wait: number) => { const remaining = deadline - Date.now(); if (remaining <= 0) { setNotice("Evaluation is still running. Refresh later to continue monitoring."); return; } timer = setTimeout(poll, Math.min(wait, remaining)); };
+    const activeDeadline = pollDeadline.current;
+    if (candidate.state !== "evaluating" && authoritativeEvaluation && terminal.has(authoritativeEvaluation.status)) {
+      pollDeadline.current = null;
+    } else if (activeDeadline && activeDeadline.candidateId === candidate.id) {
+      if (activeDeadline.evaluationId && authoritativeEvaluationId && activeDeadline.evaluationId !== authoritativeEvaluationId) {
+        pollDeadline.current = { candidateId: candidate.id, evaluationId: authoritativeEvaluationId, deadline: Date.now() + 90_000 };
+      } else if (!activeDeadline.evaluationId && authoritativeEvaluationId) {
+        activeDeadline.evaluationId = authoritativeEvaluationId;
+      }
+    }
+  }, [authoritativeEvaluation, authoritativeEvaluationId, candidate.id, candidate.state]);
+  useEffect(() => {
+    if (!(evaluate.isSuccess || candidate.state === "evaluating") || (currentEvidenceStatus && !["pending", "running"].includes(currentEvidenceStatus))) return;
+    let activeDeadline = pollDeadline.current;
+    if (!activeDeadline || activeDeadline.candidateId !== candidate.id) {
+      activeDeadline = { candidateId: candidate.id, evaluationId: effectiveEvaluationId, deadline: Date.now() + 90_000 };
+      pollDeadline.current = activeDeadline;
+    } else if (!activeDeadline.evaluationId && effectiveEvaluationId) {
+      activeDeadline.evaluationId = effectiveEvaluationId;
+    }
+    let active = true; let attempt = 0; const deadline = activeDeadline.deadline; const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) { setNotice("Evaluation is still running. Refresh later to continue monitoring."); return;
+    }
+    const expire = () => { if (!active) return; active = false; if (timer) clearTimeout(timer); setNotice("Evaluation is still running. Refresh later to continue monitoring."); controller.abort(); };
+    const deadlineTimer = setTimeout(expire, remaining);
+    const settle = () => { active = false; if (timer) clearTimeout(timer); clearTimeout(deadlineTimer); controller.abort(); };
+    const schedule = (wait: number) => { const nextRemaining = deadline - Date.now(); if (nextRemaining <= 0) { expire(); return; } timer = setTimeout(poll, Math.min(wait, nextRemaining)); };
     const poll = async () => { try {
-      if (Date.now() >= deadline) { setNotice("Evaluation is still running. Refresh later to continue monitoring."); return; }
-      if (!evaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { setEvaluationId(found.id); timer = setTimeout(poll, 0); return; } schedule(delays[attempt++] ?? 5_000); return; }
-      const result = await getEvaluation(evaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
-      if (terminal.has(result.status)) { setNotice(`Evaluation ${result.status}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); await invalidate(); return; }
+      if (Date.now() >= deadline) { expire(); return; }
+      if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
+      const result = await getEvaluation(effectiveEvaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
+      if (terminal.has(result.status)) { setEvaluationRequestBaseline(null); setNotice(`Evaluation ${result.status}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
       schedule(delays[attempt++] ?? 5_000);
     } catch (error) { if (active && !controller.signal.aborted) setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } };
-    schedule(delays[attempt++] ?? 1_000); return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
-  }, [candidate.id, candidate.state, evaluate.isSuccess, evaluation, evaluationId, invalidate, polled?.status]);
+    schedule(delays[attempt++] ?? 1_000); return settle;
+  }, [candidate.id, candidate.state, currentEvidenceStatus, effectiveEvaluationId, evaluate.isSuccess, invalidate]);
   const runAvailable = candidate.state === "evaluating" && !["pending", "running"].includes(currentEvidence?.status ?? "");
   const canReview = candidate.state === "review_required" && Boolean(currentEvidence);
   return <section className="review-actions"><div><strong>{blocked ? "Promotion blocked" : "Evaluation evidence passed"}</strong><small>{blocked ? "Approval requires passed, current, non-quarantined evidence." : "Review is bound to the completed evaluation run."}</small>{notice ? <small role="status">{notice}</small> : null}</div>

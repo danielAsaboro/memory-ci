@@ -26,7 +26,7 @@ const baseline: AgentTrajectory = {
 };
 
 function harness(candidateTrajectory: AgentTrajectory, semanticStatus: "passed" | "regressed" | "inconclusive" = "passed") {
-  const calls: Record<string, unknown[]> = { results: [], transitions: [], artifacts: [] };
+  const calls: Record<string, unknown[]> = { results: [], transitions: [], artifacts: [], completions: [] };
   let completedStatus = "";
   const dependencies: EvaluationDependencies = {
     candidates: {
@@ -40,6 +40,7 @@ function harness(candidateTrajectory: AgentTrajectory, semanticStatus: "passed" 
       async recordResult(input) { calls.results.push(input); },
       async completeRun(id, status, metadata) {
         completedStatus = status;
+        calls.completions.push(metadata);
         return { id, candidateId: candidate.id, baselineRevision: 7, policyVersion: "policy-v1", status,
           modelId: metadata.modelId ?? null, providerRequestId: metadata.providerRequestId ?? null, triggerEventId: null };
       },
@@ -128,5 +129,35 @@ describe("evaluateCandidate", () => {
     await expect(evaluateCandidate(context, candidate.id, dependencies)).resolves.toMatchObject({ status: "inconclusive" });
     expect(status()).toBe("inconclusive");
     expect(calls.results).toEqual([expect.objectContaining({ status: "inconclusive", baselineTrajectory: { status: "not_executed", reason: "unsupported_tool" }, candidateTrajectory: { status: "not_executed", reason: "unsupported_tool" } })]);
+  });
+
+  it("attributes each mixed result to only its provider request and retains the first real run trace", async () => {
+    const deterministicScenario = { ...scenario, id: "scenario-deterministic", name: "Deterministic only" };
+    const tracedScenario = { ...scenario, id: "scenario-traced", name: "Bedrock with trace" };
+    const missingTraceScenario = { ...scenario, id: "scenario-missing-trace", name: "Bedrock without trace" };
+    const { calls, dependencies } = harness(baseline);
+    dependencies.scenarios.select = async () => [deterministicScenario, tracedScenario, missingTraceScenario];
+    dependencies.trajectories.run = async (selected, revision) => {
+      if (revision.kind === "baseline" || selected.id === deterministicScenario.id) return baseline;
+      return { ...baseline, selectedMemoryIds: [candidate.id, selected.id] };
+    };
+    let judgment = 0;
+    const mixedDependencies: EvaluationDependencies = { ...dependencies, semanticJudge: async () => ({
+      status: "complete" as const,
+      value: { status: "passed", reason: "Recorded semantic assessment.", confidence: 0.95 },
+      modelId: "bedrock-model",
+      providerRequestId: judgment++ === 0 ? "aws-request-first" : null,
+    }) };
+
+    await evaluateCandidate(context, candidate.id, mixedDependencies);
+
+    expect(calls.results.map((result) => (result as { providerRequestId?: string }).providerRequestId)).toEqual([
+      undefined,
+      "aws-request-first",
+      undefined,
+    ]);
+    expect(calls.completions).toEqual([
+      { modelId: "bedrock-model", providerRequestId: "aws-request-first" },
+    ]);
   });
 });

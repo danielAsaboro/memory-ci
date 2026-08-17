@@ -75,7 +75,7 @@ export async function evaluateCandidate(
   }
 
   let aggregate: keyof typeof severity = "passed";
-  let lastProviderRequestId: string | undefined;
+  let runProviderRequestId: string | undefined;
   for (const scenario of scenarios) {
     let baselineTrajectory: AgentTrajectory;
     let candidateTrajectory: AgentTrajectory;
@@ -97,9 +97,11 @@ export async function evaluateCandidate(
     const deterministicAssertions = runDeterministicAssertions(scenario, candidateTrajectory);
     let status: keyof typeof severity = deterministicAssertions.passed ? "passed" : "regressed";
     let semanticJudgment: SemanticEvaluation | undefined;
+    let scenarioProviderRequestId: string | undefined;
     if (deterministicAssertions.passed && (behavioralDiff.hasBehavioralChange || behavioralDiff.memorySelection.added.length > 0 || behavioralDiff.memorySelection.removed.length > 0)) {
       const judged = await dependencies.semanticJudge({ scenarioName: scenario.name, behavioralDiff });
-      lastProviderRequestId = judged.providerRequestId ?? undefined;
+      scenarioProviderRequestId = judged.providerRequestId ?? undefined;
+      runProviderRequestId ??= scenarioProviderRequestId;
       if (judged.status === "complete") {
         semanticJudgment = judged.value;
         status = judged.value.status;
@@ -118,12 +120,12 @@ export async function evaluateCandidate(
     await dependencies.evaluations.recordResult({
       id: dependencies.id(), runId: run.id, scenarioId: scenario.id, status,
       baselineTrajectory, candidateTrajectory, behavioralDiff, deterministicAssertions,
-      semanticJudgment, artifactUri, providerRequestId: lastProviderRequestId,
+      semanticJudgment, artifactUri, providerRequestId: scenarioProviderRequestId,
     });
   }
 
   await dependencies.evaluations.completeRun(run.id, aggregate, {
-    modelId: dependencies.modelId, providerRequestId: lastProviderRequestId,
+    modelId: dependencies.modelId, providerRequestId: runProviderRequestId,
   });
   await dependencies.candidates.transition(candidateId, aggregate === "passed" ? "review_required" : "quarantined");
   return { id: run.id, candidateId, status: aggregate, baselineRevision, scenarioCount: scenarios.length };
