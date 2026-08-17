@@ -17,7 +17,7 @@ export async function putArtifact(
   transport: S3Transport,
   bucket: string,
   input: { body: string; digest: string; mediaType: "application/json" },
-): Promise<{ uri: string; digest: string; versionId: string | null; providerRequestId: string | null }> {
+): Promise<{ uri: string; digest: string; versionId: string | null; providerRequestId: string | null; etag: string | null }> {
   const actual = createHash("sha256").update(input.body).digest("hex");
   if (actual !== input.digest) throw new DomainError("invalid_input", "Artifact digest does not match its body.");
   const key = `artifacts/${input.digest}.json`;
@@ -29,6 +29,6 @@ export async function putArtifact(
   });
   return {
     uri: `s3://${bucket}/${key}`, digest: input.digest, versionId: response.VersionId ?? null,
-    providerRequestId: response.$metadata.requestId ?? null,
+    providerRequestId: response.$metadata.requestId ?? null, etag: response.ETag ?? null,
   };
 }

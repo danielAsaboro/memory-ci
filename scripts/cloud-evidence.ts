@@ -116,14 +116,14 @@ export function hasObservedBedrockInvocation(value: unknown, smoke: { aws: { acc
   }));
 }
 
-export function validateObservedArtifact(head: { VersionId?: string; Metadata?: Record<string, string>; ETag?: string }, body: Uint8Array, smoke: { runId: string; s3: { versionId: string; digest: string } }): { etag: string } {
+export function validateObservedArtifact(head: { VersionId?: string; Metadata?: Record<string, string>; ETag?: string }, body: Uint8Array, smoke: { runId: string; s3: { versionId: string; digest: string; etag: string } }): { etag: string } {
   const digest = createHash("sha256").update(body).digest("hex");
-  if (!head.ETag || head.VersionId !== smoke.s3.versionId || head.Metadata?.["content-sha256"] !== smoke.s3.digest || digest !== smoke.s3.digest) throw new Error("S3 observation does not exactly match the versioned smoke artifact.");
+  if (!head.ETag || head.ETag !== smoke.s3.etag || head.VersionId !== smoke.s3.versionId || head.Metadata?.["content-sha256"] !== smoke.s3.digest || digest !== smoke.s3.digest) throw new Error("S3 observation does not exactly match the versioned smoke artifact.");
   try { if (JSON.parse(Buffer.from(body).toString("utf8")).runId !== smoke.runId) throw new Error("mismatch"); } catch { throw new Error("S3 artifact does not contain the exact evidence run ID."); }
   return { etag: head.ETag };
 }
 
-export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; startedAt: string; generatedAt: string; aws: { accountId: string; region: string }; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
+export function extractObservedServiceEvent(value: unknown, smoke: { runId: string; startedAt: string; generatedAt: string; aws: { accountId: string; region: string; bucket: string }; s3: { key: string; versionId: string; digest: string; etag: string }; eventBridge: { eventId: string }; bedrock: { evaluator: { modelId: string; providerRequestId: string }; embedding: { modelId: string; providerRequestId: string; dimensions: number } } }): string | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as { events?: unknown }).events)) return null;
   const match = (value as { events: unknown[] }).events.find((event) => {
     if (!event || typeof event !== "object" || typeof (event as { eventId?: unknown }).eventId !== "string" || typeof (event as { message?: unknown }).message !== "string") return false;
@@ -135,7 +135,8 @@ export function extractObservedServiceEvent(value: unknown, smoke: { runId: stri
       const detail = envelope && typeof envelope === "object" && typeof record.detail === "object" ? record.detail as { payload?: unknown } : null;
       const payload = detail?.payload as Record<string, unknown> | undefined;
       const evaluator = payload?.evaluator as Record<string, unknown> | undefined; const embedding = payload?.embedding as Record<string, unknown> | undefined;
-      return payload?.runId === smoke.runId && evaluator?.modelId === smoke.bedrock.evaluator.modelId && evaluator?.providerRequestId === smoke.bedrock.evaluator.providerRequestId && embedding?.modelId === smoke.bedrock.embedding.modelId && embedding?.providerRequestId === smoke.bedrock.embedding.providerRequestId && embedding?.dimensions === 1024;
+      const s3 = payload?.s3 as Record<string, unknown> | undefined;
+      return payload?.runId === smoke.runId && s3?.bucket === smoke.aws.bucket && s3?.key === smoke.s3.key && s3?.versionId === smoke.s3.versionId && s3?.digest === smoke.s3.digest && s3?.etag === smoke.s3.etag && evaluator?.modelId === smoke.bedrock.evaluator.modelId && evaluator?.providerRequestId === smoke.bedrock.evaluator.providerRequestId && embedding?.modelId === smoke.bedrock.embedding.modelId && embedding?.providerRequestId === smoke.bedrock.embedding.providerRequestId && embedding?.dimensions === 1024;
     } catch { return false; }
   }) as { eventId: string } | undefined;
   return match?.eventId ?? null;
