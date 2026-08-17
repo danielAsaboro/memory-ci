@@ -43,7 +43,7 @@ async function migrateThrough(url: string, lastFile: string): Promise<void> {
   }
 }
 
-describe("CockroachDB migrations", () => {
+describe.sequential("CockroachDB migrations", () => {
   beforeAll(async () => {
     admin = new Client({ connectionString: adminUrl });
     await admin.connect();

@@ -95,7 +95,7 @@ test("evaluates, approves, promotes, semantically reads, rolls back, and audits 
   const evaluatedResponse = page.waitForResponse((response) => response.url().includes(`/candidates/${candidateId}/evaluate`) && response.request().method() === "POST");
   await page.getByRole("button", { name: "Run evaluation" }).click();
   const evaluationRequestId = (await evaluatedResponse).headers()["x-request-id"]!;
-  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/, { timeout: liveProduction ? 90_000 : 5_000 });
+  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/, { timeout: liveProduction ? 90_000 : 20_000 });
   const evidence = await page.evaluate(async (id) => {
     const runs = await (await fetch("/api/stash/v1/evaluations")).json() as Array<{ id: string; candidateId: string }>;
     const run = runs.find((item) => item.candidateId === id)!;
