@@ -164,6 +164,28 @@ describe("/api/stash/[...path]", () => {
     expect(invalid.status).toBe(502);
   });
 
+  it.each([
+    ["provenance source type", { ...explanation, provenance: { ...explanation.provenance, sourceType: "database" } }, "database"],
+    ["review decision", { ...explanation, review: { ...explanation.review!, decision: "deferred" } }, "deferred"],
+    ["evaluation status", { ...explanation, evaluation: { ...explanation.evaluation!, status: "skipped" } }, "skipped"],
+    ["activation event type", { ...explanation, activation: { ...explanation.activation!, eventType: "deleted" } }, "deleted"],
+    ["relation type", { ...explanation, relations: [{ ...explanation.relations[0], relationType: "duplicates" }] }, "duplicates"],
+  ])("fails closed without echoing an invalid %s", async (_label, providerResponse, invalidValue) => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(providerResponse), {
+      headers: { "content-type": "application/json" },
+    })));
+    const path = ["v1", "memory", "11111111-1111-4111-8111-111111111111", "explain"];
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/memory/11111111-1111-4111-8111-111111111111/explain"), routeContext(path));
+    const body = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(JSON.parse(body)).toMatchObject({ code: "provider_unavailable", message: "Stash is unavailable." });
+    expect(body).not.toContain(invalidValue);
+  });
+
   it("maps structured upstream errors to fixed safe messages", async () => {
     const token = await signWorkspaceSession(session, sessionSecret);
     cookieStore.get.mockReturnValue({ value: token });
