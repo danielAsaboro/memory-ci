@@ -18,10 +18,12 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
   const client = useQueryClient();
   const [form, setForm] = useState(initial);
   const key = useRef<string | null>(null);
+  const fingerprint = useRef<string | null>(null);
   const sourceId = useRef<string | null>(null);
   const [submitted, setSubmitted] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: async () => {
+      const nextFingerprint = JSON.stringify(form); if (fingerprint.current !== nextFingerprint) { fingerprint.current = nextFingerprint; key.current = null; sourceId.current = null; }
       key.current ??= crypto.randomUUID(); sourceId.current ??= crypto.randomUUID();
       const sourceDigest = await digest(form.sourceContent);
       return createCandidate({

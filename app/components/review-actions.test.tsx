@@ -30,7 +30,7 @@ describe("ReviewActions", () => {
     expect(screen.getByText(/Promotion blocked/i)).toBeInTheDocument();
   });
 
-  it("starts evaluation and polls the returned run through a terminal state", async () => {
+  it("does not enqueue another evaluation when refreshed evidence is already running", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId: "88888888-8888-4888-8888-888888888888" }), { headers: { "content-type": "application/json" } }))
@@ -38,16 +38,8 @@ describe("ReviewActions", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ ...evaluation, results: [] }), { headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     renderActions({ candidate: { ...candidate, state: "evaluating" }, evaluation: { ...evaluation, status: "running", completedAt: null } });
-    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); await vi.advanceTimersByTimeAsync(2_000); });
-    expect(screen.getByText(/Evaluation passed/i)).toBeInTheDocument();
-    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-      `/api/stash/v1/candidates/${candidate.id}/evaluate`,
-      `/api/stash/v1/evaluations/${evaluation.id}`,
-      `/api/stash/v1/evaluations/${evaluation.id}`,
-    ]);
+    expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith(`/api/stash/v1/candidates/${candidate.id}/evaluate`, expect.anything());
     vi.useRealTimers();
   });
 
