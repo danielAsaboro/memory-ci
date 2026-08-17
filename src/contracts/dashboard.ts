@@ -106,6 +106,7 @@ export const evaluationSummarySchema = z.object({
   status: evaluationStatusSchema,
   modelId: z.string().max(255).nullable(),
   providerRequestId: z.string().max(255).nullable(),
+  triggerEventId: identifierSchema.nullable().optional(),
   startedAt: nullableTimestampSchema,
   completedAt: nullableTimestampSchema,
   resultCount: z.number().int().nonnegative(),

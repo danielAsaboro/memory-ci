@@ -142,6 +142,22 @@ describe("/api/stash/[...path]", () => {
     expect(extra.status).toBe(502);
   });
 
+  it("forwards an evaluation's outbox trigger identity without accepting unknown fields", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    const evaluation = {
+      id: "11111111-1111-4111-8111-111111111111", candidateId: "22222222-2222-4222-8222-222222222222", baselineRevision: 1,
+      policyVersion: "policy-v1", status: "pending", modelId: null, providerRequestId: null,
+      triggerEventId: "33333333-3333-4333-8333-333333333333", startedAt: null, completedAt: null, resultCount: 0,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify([evaluation]), { headers: { "content-type": "application/json" } })));
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/evaluations"), routeContext(["v1", "evaluations"]));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([evaluation]);
+  });
+
   it("projects valid categorical explanation values and fails closed for invalid provider categories", async () => {
     const token = await signWorkspaceSession(session, sessionSecret);
     cookieStore.get.mockReturnValue({ value: token });

@@ -132,6 +132,7 @@ describe("ReviewActions", () => {
       completedAt: null,
       providerRequestId: null,
       resultCount: 0,
+      triggerEventId: "99999999-9999-4999-8999-999999999999",
     };
     let evaluationListRequests = 0;
     const fetchMock = vi.fn((path: string) => {
@@ -155,6 +156,7 @@ describe("ReviewActions", () => {
     expect(screen.queryByRole("button", { name: "Run evaluation" })).toBeNull();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/stash/v1/evaluations/${nextEvaluation.id}`,
@@ -191,10 +193,63 @@ describe("ReviewActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
 
     expect(fetchMock).not.toHaveBeenCalledWith(
       `/api/stash/v1/evaluations/${historicalEvaluation.id}`,
+      expect.anything(),
+    );
+  });
+
+  it("polls only the evaluation bound to the queued outbox event", async () => {
+    vi.useFakeTimers();
+    const requestedEventId = "99999999-9999-4999-8999-999999999999";
+    const requestedEvaluation = {
+      ...evaluation,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      status: "pending",
+      startedAt: "2026-08-17T10:03:00.000Z",
+      completedAt: null,
+      providerRequestId: null,
+      resultCount: 0,
+      triggerEventId: requestedEventId,
+    };
+    const concurrentEvaluation = {
+      ...evaluation,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      status: "pending",
+      startedAt: "2026-08-17T10:04:00.000Z",
+      completedAt: null,
+      providerRequestId: null,
+      resultCount: 0,
+      triggerEventId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    };
+    let listRequests = 0;
+    const fetchMock = vi.fn((path: string) => {
+      if (path.endsWith(`/candidates/${candidate.id}/evaluate`)) {
+        return Promise.resolve(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId: requestedEventId }), { headers: { "content-type": "application/json" } }));
+      }
+      if (path.endsWith("/evaluations")) {
+        listRequests += 1;
+        return Promise.resolve(new Response(JSON.stringify(listRequests === 1 ? [evaluation] : [evaluation, concurrentEvaluation, requestedEvaluation]), { headers: { "content-type": "application/json" } }));
+      }
+      return new Promise<Response>(() => undefined);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderActions({ candidate: { ...candidate, state: "evaluating" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${requestedEvaluation.id}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${concurrentEvaluation.id}`,
       expect.anything(),
     );
   });

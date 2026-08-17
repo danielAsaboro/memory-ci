@@ -111,18 +111,18 @@ async function listCandidateRows(transaction: TenantTransaction, candidateId?: s
 
 type EvaluationRow = {
   id: string; candidate_id: string; baseline_revision: string; policy_version: string;
-  status: EvaluationSummary["status"]; model_id: string | null; provider_request_id: string | null;
+  status: EvaluationSummary["status"]; model_id: string | null; provider_request_id: string | null; trigger_event_id: string | null;
   started_at: Date | null; completed_at: Date | null; result_count: string;
 };
 
-const evaluationSelect = `SELECT e.id,e.candidate_id,e.baseline_revision,e.policy_version,e.status,e.model_id,e.provider_request_id,
+const evaluationSelect = `SELECT e.id,e.candidate_id,e.baseline_revision,e.policy_version,e.status,e.model_id,e.provider_request_id,e.trigger_event_id,
                                   e.started_at,e.completed_at,count(r.id) AS result_count
                            FROM evaluation_runs e
                            LEFT JOIN evaluation_results r ON r.tenant_id=e.tenant_id AND r.evaluation_run_id=e.id`;
 
 const mapEvaluation = (row: EvaluationRow): EvaluationSummary => evaluationSummarySchema.parse({
   id: row.id, candidateId: row.candidate_id, baselineRevision: asNumber(row.baseline_revision), policyVersion: row.policy_version,
-  status: row.status, modelId: row.model_id, providerRequestId: row.provider_request_id,
+  status: row.status, modelId: row.model_id, providerRequestId: row.provider_request_id, triggerEventId: row.trigger_event_id,
   startedAt: asNullableTimestamp(row.started_at), completedAt: asNullableTimestamp(row.completed_at), resultCount: asNumber(row.result_count),
 });
 
@@ -130,7 +130,7 @@ async function listEvaluationRows(transaction: TenantTransaction, evaluationRunI
   const result = await transaction.client.query<EvaluationRow>(
     `${evaluationSelect}
      WHERE e.tenant_id=$1 AND ($2::UUID IS NULL OR e.id=$2)
-     GROUP BY e.id,e.candidate_id,e.baseline_revision,e.policy_version,e.status,e.model_id,e.provider_request_id,e.started_at,e.completed_at,e.created_at
+     GROUP BY e.id,e.candidate_id,e.baseline_revision,e.policy_version,e.status,e.model_id,e.provider_request_id,e.trigger_event_id,e.started_at,e.completed_at,e.created_at
      ORDER BY coalesce(e.completed_at,e.started_at,e.created_at) DESC,e.id DESC`,
     [transaction.tenantId, evaluationRunId ?? null],
   );

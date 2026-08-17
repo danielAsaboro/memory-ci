@@ -3,7 +3,7 @@ import { basename, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export type AuditViolation = Readonly<{
-  ruleId: "CANONICAL_ORIGIN" | "DEMO_COPY" | "PUBLIC_ENV_SECRET" | "SECURITY_HEADERS" | "SOURCE_MAP_SECRET";
+  ruleId: "CANONICAL_ORIGIN" | "CLIENT_SECRET" | "DEMO_COPY" | "PUBLIC_ENV_SECRET" | "SECURITY_HEADERS" | "SERVER_API_URL" | "SOURCE_MAP_SECRET";
   path: string;
   message: string;
 }>;
@@ -16,13 +16,13 @@ export type ProductionAudit = Readonly<{
 const canonicalOrigin = "https://trystash.xyz";
 const permittedPublicEnvironmentKeys = new Set(["NEXT_PUBLIC_APP_URL"]);
 const demoCopy = /chatgpt\.site|sandbox fixture/i;
-const sourceMapSecret = /(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|BEGIN(?: [A-Z]+)? PRIVATE KEY|(?:postgres(?:ql)?:\/\/)[^\s"']+)/i;
+const clientSecret = /(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|STASH_SESSION_SECRET|STASH_BOOTSTRAP_KEY|BEGIN(?: [A-Z]+)? PRIVATE KEY|(?:postgres(?:ql)?:\/\/)[^\s"']+)/i;
 
 export async function auditProduction(root = process.cwd()): Promise<ProductionAudit> {
   const violations: AuditViolation[] = [];
   const sourceFiles = await collectFiles(root, ["app", "src"], (path) => !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path));
-  const buildFiles = await collectFiles(root, [".next/static/chunks", ".next/server", ".next"], (path) => !path.endsWith(".map"));
-  const sourceMaps = await collectFiles(root, [".next"], (path) => path.endsWith(".map"));
+  const buildFiles = await collectFiles(root, [".next/static", ".next/build-manifest.json", ".next/app-build-manifest.json", ".next/server/app-paths-manifest.json"], (path) => !path.endsWith(".map"));
+  const sourceMaps = await collectFiles(root, [".next/static"], (path) => path.endsWith(".map"));
   const environmentFiles = await rootEnvironmentFiles(root);
 
   for (const file of unique([...sourceFiles, ...buildFiles])) {
@@ -41,26 +41,36 @@ export async function auditProduction(root = process.cwd()): Promise<ProductionA
     }
   }
 
-  const configuredOrigin = await environmentValue(environmentFiles, "NEXT_PUBLIC_APP_URL");
-  if (configuredOrigin !== canonicalOrigin) {
-    add(violations, "CANONICAL_ORIGIN", root, join(root, ".env.example"), `NEXT_PUBLIC_APP_URL must equal ${canonicalOrigin}.`);
+  const configuredOrigins = await environmentValues(environmentFiles, "NEXT_PUBLIC_APP_URL");
+  if (configuredOrigins.length === 0 || configuredOrigins.some(({ value }) => value !== canonicalOrigin)) {
+    add(violations, "CANONICAL_ORIGIN", root, join(root, ".env.example"), `Every NEXT_PUBLIC_APP_URL definition must equal ${canonicalOrigin}.`);
+  }
+
+  const apiEndpoints = await environmentValues(environmentFiles, "STASH_API_BASE_URL");
+  if (apiEndpoints.length === 0 || apiEndpoints.some(({ value }) => !isProductionApiEndpoint(value))) {
+    add(violations, "SERVER_API_URL", root, join(root, ".env.example"), "STASH_API_BASE_URL must be an approved production HTTPS endpoint.");
   }
 
   for (const file of sourceMaps) {
     const contents = await readFile(file, "utf8").catch(() => "");
-    if (sourceMapSecret.test(contents)) add(violations, "SOURCE_MAP_SECRET", root, file, "A source map contains a secret-shaped value.");
+    if (clientSecret.test(contents)) add(violations, "SOURCE_MAP_SECRET", root, file, "A source map contains a secret-shaped value.");
   }
 
-  const headers = await configuredHeaders(root);
+  for (const file of buildFiles) {
+    const contents = await readFile(file, "utf8").catch(() => "");
+    if (clientSecret.test(contents)) add(violations, "CLIENT_SECRET", root, file, "A client artifact contains a server secret pattern.");
+  }
+
+  const headerRules = await configuredHeaderRules(root);
   const requiredHeaders: Readonly<Record<string, (value: string) => boolean>> = {
-    "content-security-policy": (value) => value.includes("default-src"),
+    "content-security-policy": (value) => value.includes("default-src") && !/script-src[^;]*'unsafe-inline'/.test(value),
     "referrer-policy": (value) => value === "strict-origin-when-cross-origin",
     "x-content-type-options": (value) => value === "nosniff",
     "permissions-policy": (value) => value.length > 0,
-    "strict-transport-security": (value) => /max-age=\d+/.test(value),
+    "strict-transport-security": (value) => (value.match(/max-age=(\d+)/)?.[1] ?? "0") !== "0",
   };
-  const missing = Object.entries(requiredHeaders).filter(([key, accepts]) => !headers.some((header) => header.key.toLowerCase() === key && accepts(header.value))).map(([key]) => key);
-  if (missing.length > 0) add(violations, "SECURITY_HEADERS", root, await nextConfigPath(root) ?? join(root, "next.config.ts"), `Missing or unsafe response headers: ${missing.join(", ")}.`);
+  const missing = headerRules.flatMap((headers) => Object.entries(requiredHeaders).filter(([key, accepts]) => !headers.some((header) => header.key.toLowerCase() === key && accepts(header.value))).map(([key]) => key));
+  if (headerRules.length === 0 || missing.length > 0) add(violations, "SECURITY_HEADERS", root, await nextConfigPath(root) ?? join(root, "next.config.ts"), `Missing or unsafe response headers: ${unique(missing.length ? missing : Object.keys(requiredHeaders)).join(", ")}.`);
 
   const sorted = violations.sort((left, right) => `${left.ruleId}:${left.path}:${left.message}`.localeCompare(`${right.ruleId}:${right.path}:${right.message}`));
   return { ok: sorted.length === 0, violations: sorted };
@@ -88,33 +98,40 @@ async function walk(path: string, files: string[], include: (path: string) => bo
 
 async function rootEnvironmentFiles(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isFile() && entry.name.startsWith(".env")).map((entry) => join(root, entry.name));
+  return entries.filter((entry) => entry.isFile() && [".env", ".env.example", ".env.local", ".env.production", ".env.production.local"].includes(entry.name)).map((entry) => join(root, entry.name));
 }
 
-async function environmentValue(files: readonly string[], key: string): Promise<string | undefined> {
-  for (const file of files) {
-    const match = (await readFile(file, "utf8")).match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "m"));
-    if (match) return match[1].replace(/^['"]|['"]$/g, "");
+async function environmentValues(files: readonly string[], key: string): Promise<readonly { file: string; value: string }[]> {
+  const definitions: { file: string; value: string }[] = [];
+  for (const file of files) for (const match of (await readFile(file, "utf8")).matchAll(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "gm"))) {
+    definitions.push({ file, value: match[1]!.replace(/^['"]|['"]$/g, "") });
   }
-  return undefined;
+  return definitions;
 }
 
 type Header = Readonly<{ key: string; value: string }>;
 
-async function configuredHeaders(root: string): Promise<Header[]> {
+async function configuredHeaderRules(root: string): Promise<Header[][]> {
   const configPath = await nextConfigPath(root);
   if (!configPath) return [];
   try {
     const configModule = await import(`${pathToFileURL(configPath).href}?audit=${Date.now()}`);
     const config = typeof configModule.default === "function" ? await configModule.default() : await configModule.default;
     const rules: unknown = typeof config?.headers === "function" ? await config.headers() : [];
-    return Array.isArray(rules) ? rules.flatMap((rule) => {
+    return Array.isArray(rules) ? rules.map((rule) => {
       const headers = typeof rule === "object" && rule !== null && "headers" in rule ? rule.headers : undefined;
       return Array.isArray(headers) ? headers.filter(isHeader) : [];
     }) : [];
   } catch {
     return [];
   }
+}
+
+function isProductionApiEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname === "api.trystash.xyz" || /\.execute-api\.[a-z0-9-]+\.amazonaws\.com$/i.test(url.hostname));
+  } catch { return false; }
 }
 
 async function nextConfigPath(root: string): Promise<string | undefined> {

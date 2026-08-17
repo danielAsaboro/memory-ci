@@ -30,6 +30,7 @@ async function seedReadEvidence(workspace: Awaited<ReturnType<typeof bootstrapWo
   const candidateId = randomUUID();
   const scenarioId = randomUUID();
   const evaluationId = randomUUID();
+  const triggerEventId = randomUUID();
   let memoryId = "";
   await withTenantTransaction(pool, workspace.tenantId, async ({ client }) => {
     const starter = await client.query<{ id: string }>(
@@ -53,9 +54,9 @@ async function seedReadEvidence(workspace: Awaited<ReturnType<typeof bootstrapWo
     );
     await client.query(
       `INSERT INTO evaluation_runs
-       (tenant_id,id,candidate_id,baseline_revision,policy_version,status,started_at,completed_at)
-       VALUES ($1,$2,$3,1,'policy-v1','passed',now(),now())`,
-      [workspace.tenantId, evaluationId, candidateId],
+       (tenant_id,id,candidate_id,baseline_revision,policy_version,trigger_event_id,status,started_at,completed_at)
+       VALUES ($1,$2,$3,1,'policy-v1',$4,'passed',now(),now())`,
+      [workspace.tenantId, evaluationId, candidateId, triggerEventId],
     );
     await client.query(
       `INSERT INTO evaluation_results
@@ -71,7 +72,7 @@ async function seedReadEvidence(workspace: Awaited<ReturnType<typeof bootstrapWo
       [workspace.tenantId, randomUUID(), workspace.namespaceId, workspace.agentId, memoryId],
     );
   });
-  return { candidateId, evaluationId, memoryId };
+  return { candidateId, evaluationId, triggerEventId, memoryId };
 }
 
 async function sourceId(client: { query<T>(text: string, values: readonly unknown[]): Promise<{ rows: T[] }> }, tenantId: string): Promise<string> {
@@ -121,8 +122,8 @@ describe("workspace read models", () => {
     expect(agents).toEqual([expect.objectContaining({ id: first.agentId, namespaceIds: [first.namespaceId], reads: 1 })]);
     expect(memories).toEqual([expect.objectContaining({ id: firstEvidence.memoryId, active: true })]);
     expect(memory).toMatchObject({ id: firstEvidence.memoryId, lineage: [expect.objectContaining({ id: firstEvidence.memoryId })] });
-    expect(evaluations).toEqual([expect.objectContaining({ id: firstEvidence.evaluationId, candidateId: firstEvidence.candidateId, resultCount: 1 })]);
-    expect(evaluation).toMatchObject({ id: firstEvidence.evaluationId, results: [expect.objectContaining({ status: "passed" })] });
+    expect(evaluations).toEqual([expect.objectContaining({ id: firstEvidence.evaluationId, candidateId: firstEvidence.candidateId, triggerEventId: firstEvidence.triggerEventId, resultCount: 1 })]);
+    expect(evaluation).toMatchObject({ id: firstEvidence.evaluationId, triggerEventId: firstEvidence.triggerEventId, results: [expect.objectContaining({ status: "passed" })] });
     expect(candidates).toEqual(expect.arrayContaining([expect.objectContaining({ id: firstEvidence.candidateId, state: "review_required" })]));
     expect(candidates).toHaveLength(2);
     expect(candidate).toMatchObject({ id: firstEvidence.candidateId, canonicalText: "Review refunds over $200.", latestEvaluationId: firstEvidence.evaluationId, latestApprovedReviewId: null });
