@@ -162,3 +162,4 @@ Deploy the R3 SAM update before collecting evidence so the EventBridge observati
 
 - Closed the `SHOW JOBS` readiness gap. Production vector evidence now queries the retained matching `memory_versions_embedding_idx` job, requires the latest exact table/index description to be `succeeded` with a finished timestamp, and records job ID/status/time in the strict receipt. Running, paused, failed, canceled, reverting, absent, and mismatched jobs fail closed with an instruction to rerun/repair the index migration.
 - Focused vector/schema tests, typecheck, lint, and diff check passed. Full gates should be rerun after this final follow-up before deployment.
+- Post-follow-up full gate passed: `npm run verify` (258 unit tests/41 files; 30 integration tests/6 files), `npm run infra:validate`, `npm run infra:build`, `npm run production:audit` (`{"ok":true,"violations":[]}`), and diff/status checks.
