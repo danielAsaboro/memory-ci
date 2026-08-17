@@ -9,12 +9,12 @@ const claims = { subject: "user-1", tenantId: "tenant-1", roles: ["reviewer"] };
 function services(overrides: Partial<ApiServices> = {}): ApiServices {
   const success = async () => ({ ok: true });
   return {
-    createCandidate: success, listCandidates: success, getCandidate: success,
+    getOverview: success, listAgents: success, listMemories: success, getMemory: success,
+    listEvaluations: success, getEvaluation: success, listCandidates: success, getCandidate: success,
+    listAudit: success, getWorkspaceStatus: success, createCandidate: success,
     screenCandidate: success, evaluateCandidate: success, reviewCandidate: success,
     promoteCandidate: success, rollbackLineage: success, searchMemory: success,
-    explainMemory: success, namespaceRevision: success, getEvaluation: success,
-    listAudit: success, integrationsStatus: success, demoReset: success,
-    demoPoisonAttempt: success, demoPolicyUpdate: success,
+    explainMemory: success, namespaceRevision: success,
     ...overrides,
   };
 }
@@ -107,6 +107,7 @@ describe("Memory CI API router", () => {
   it("covers every documented route and returns 404 for unknown paths", async () => {
     const router = createRouter(dependencies());
     const routes: Array<[string, string, unknown?]> = [
+      ["GET", "/v1/overview"], ["GET", "/v1/agents"], ["GET", "/v1/memory"], ["GET", "/v1/memory/memory-1"],
       ["GET", "/v1/candidates"], ["GET", "/v1/candidates/candidate-1"],
       ["POST", "/v1/candidates/candidate-1/screen", {}], ["POST", "/v1/candidates/candidate-1/evaluate", {}],
       ["POST", "/v1/candidates/candidate-1/reviews", { evaluationRunId: "run-1", decision: "approved", reason: "safe" }],
@@ -114,8 +115,7 @@ describe("Memory CI API router", () => {
       ["POST", "/v1/lineages/lineage-1/rollback", { targetVersionId: "version-1", reason: "regression" }],
       ["POST", "/v1/memory/search", { namespaceId: "namespace-1", query: "refund", purpose: "support" }],
       ["GET", "/v1/memory/memory-1/explain"], ["GET", "/v1/namespaces/namespace-1/revision"],
-      ["GET", "/v1/evaluations/run-1"], ["GET", "/v1/audit"], ["GET", "/v1/integrations/status"],
-      ["POST", "/v1/demo/reset", {}], ["POST", "/v1/demo/poison-attempt", {}], ["POST", "/v1/demo/policy-update", {}],
+      ["GET", "/v1/evaluations"], ["GET", "/v1/evaluations/run-1"], ["GET", "/v1/audit"], ["GET", "/v1/workspace/status"],
     ];
     for (const [method, path, body] of routes) {
       const response = await router(request(path, {
@@ -125,6 +125,7 @@ describe("Memory CI API router", () => {
       expect(response.status, `${method} ${path}`).toBeLessThan(400);
     }
     expect((await router(request("/v1/not-real"))).status).toBe(404);
+    expect((await router(request("/v1/demo/reset", { method: "POST", body: "{}" }))).status).toBe(404);
   });
 
   it("maps typed errors without leaking raw secrets", async () => {

@@ -13,6 +13,7 @@ import { explainMemory } from "../services/explain-memory";
 import { ingestCandidate } from "../services/ingest-candidate";
 import { promoteCandidate } from "../services/promote-candidate";
 import { retrieveActiveMemory } from "../services/retrieve-memory";
+import { createReadWorkspaceServices } from "../services/read-workspace";
 import { decideReview } from "../services/review-candidate";
 import { rollbackMemory } from "../services/rollback-memory";
 
@@ -27,8 +28,10 @@ const asString = (input: Record<string, unknown>, key: string) => {
 export function createApiServices(pool: Pool): ApiServices {
   const run = <T>(context: Parameters<ApiServices["getCandidate"]>[0], operation: (transaction: TenantTransaction) => Promise<T>) =>
     withTenantTransaction(pool, context.tenantId, operation);
+  const readWorkspace = createReadWorkspaceServices(pool);
 
   return {
+    ...readWorkspace,
     createCandidate: (context, input) => run(context, async (transaction) => ingestCandidate(context, input as never, {
       namespaces: { get: async (id) => {
         const result = await transaction.client.query<{ protected: boolean }>("SELECT protected FROM agent_namespaces WHERE tenant_id=$1 AND id=$2", [context.tenantId, id]);
@@ -48,14 +51,6 @@ export function createApiServices(pool: Pool): ApiServices {
       authorizeProtectedNamespace: async () => context.roles.some((role) => role === "admin" || role === "reviewer"),
       id: randomUUID,
     })),
-    listCandidates: (context, input) => run(context, (transaction) => new CandidateRepository(transaction).list(
-      typeof input.namespaceId === "string" ? input.namespaceId : undefined,
-    )),
-    getCandidate: (context, input) => run(context, async (transaction) => {
-      const candidate = await new CandidateRepository(transaction).get(asString(input, "candidateId"));
-      if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
-      return candidate;
-    }),
     screenCandidate: (context, input) => run(context, async (transaction) => {
       const candidateId = asString(input, "candidateId");
       const candidates = new CandidateRepository(transaction);
@@ -129,19 +124,5 @@ export function createApiServices(pool: Pool): ApiServices {
       if (!result.rows[0]) throw new DomainError("not_found", "Namespace was not found.");
       return { namespaceId, revision: Number(result.rows[0].current_revision) };
     }),
-    getEvaluation: (context, input) => run(context, async (transaction) => {
-      const id = asString(input, "evaluationRunId");
-      const runResult = await transaction.client.query("SELECT * FROM evaluation_runs WHERE tenant_id=$1 AND id=$2", [context.tenantId, id]);
-      if (!runResult.rows[0]) throw new DomainError("not_found", "Evaluation was not found.");
-      const results = await transaction.client.query("SELECT * FROM evaluation_results WHERE tenant_id=$1 AND evaluation_run_id=$2 ORDER BY created_at", [context.tenantId, id]);
-      return { run: runResult.rows[0], results: results.rows };
-    }),
-    listAudit: (context) => run(context, (transaction) => new AuditRepository(transaction).list()),
-    integrationsStatus: async () => ({ cockroachdb: "configured", aws: {
-      bedrock: Boolean(process.env.BEDROCK_MODEL_ID), s3: Boolean(process.env.EVIDENCE_BUCKET), eventBridge: Boolean(process.env.EVENT_BUS_NAME),
-    } }),
-    demoReset: async () => { throw new DomainError("forbidden", "Cloud demo reset is disabled; use the deterministic seed command."); },
-    demoPoisonAttempt: async () => { throw new DomainError("forbidden", "Use the candidate ingestion endpoint for demo mutations."); },
-    demoPolicyUpdate: async () => { throw new DomainError("forbidden", "Use the candidate ingestion endpoint for demo mutations."); },
   };
 }

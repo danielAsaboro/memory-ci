@@ -10,10 +10,11 @@ export type ApiContext = Readonly<{
 }>;
 type Service = (context: ApiContext, input: Record<string, unknown>) => Promise<unknown>;
 export type ApiServices = Readonly<{
-  createCandidate: Service; listCandidates: Service; getCandidate: Service; screenCandidate: Service;
+  getOverview: Service; listAgents: Service; listMemories: Service; getMemory: Service;
+  listEvaluations: Service; getEvaluation: Service; listCandidates: Service; getCandidate: Service;
+  listAudit: Service; getWorkspaceStatus: Service; createCandidate: Service; screenCandidate: Service;
   evaluateCandidate: Service; reviewCandidate: Service; promoteCandidate: Service; rollbackLineage: Service;
-  searchMemory: Service; explainMemory: Service; namespaceRevision: Service; getEvaluation: Service;
-  listAudit: Service; integrationsStatus: Service; demoReset: Service; demoPoisonAttempt: Service; demoPolicyUpdate: Service;
+  searchMemory: Service; explainMemory: Service; namespaceRevision: Service;
 }>;
 
 export type ApiDependencies = Readonly<{
@@ -37,6 +38,10 @@ type Route = Readonly<{
 }>;
 
 const routes: readonly Route[] = [
+  { method: "GET", pattern: /^\/v1\/overview$/, service: "getOverview" },
+  { method: "GET", pattern: /^\/v1\/agents$/, service: "listAgents" },
+  { method: "GET", pattern: /^\/v1\/memory$/, service: "listMemories" },
+  { method: "GET", pattern: /^\/v1\/memory\/([^/]+)$/, service: "getMemory", parameterNames: ["memoryId"] },
   { method: "POST", pattern: /^\/v1\/candidates$/, service: "createCandidate", schema: candidateApiSchema, idempotent: true, status: 202 },
   { method: "GET", pattern: /^\/v1\/candidates$/, service: "listCandidates" },
   { method: "GET", pattern: /^\/v1\/candidates\/([^/]+)$/, service: "getCandidate", parameterNames: ["candidateId"] },
@@ -48,12 +53,10 @@ const routes: readonly Route[] = [
   { method: "POST", pattern: /^\/v1\/memory\/search$/, service: "searchMemory", schema: search },
   { method: "GET", pattern: /^\/v1\/memory\/([^/]+)\/explain$/, service: "explainMemory", parameterNames: ["memoryId"] },
   { method: "GET", pattern: /^\/v1\/namespaces\/([^/]+)\/revision$/, service: "namespaceRevision", parameterNames: ["namespaceId"] },
+  { method: "GET", pattern: /^\/v1\/evaluations$/, service: "listEvaluations" },
   { method: "GET", pattern: /^\/v1\/evaluations\/([^/]+)$/, service: "getEvaluation", parameterNames: ["evaluationRunId"] },
   { method: "GET", pattern: /^\/v1\/audit$/, service: "listAudit" },
-  { method: "GET", pattern: /^\/v1\/integrations\/status$/, service: "integrationsStatus" },
-  { method: "POST", pattern: /^\/v1\/demo\/reset$/, service: "demoReset", schema: empty, idempotent: true },
-  { method: "POST", pattern: /^\/v1\/demo\/poison-attempt$/, service: "demoPoisonAttempt", schema: empty, idempotent: true, status: 202 },
-  { method: "POST", pattern: /^\/v1\/demo\/policy-update$/, service: "demoPolicyUpdate", schema: empty, idempotent: true, status: 202 },
+  { method: "GET", pattern: /^\/v1\/workspace\/status$/, service: "getWorkspaceStatus" },
 ];
 
 function contextFromClaims(claims: AuthClaims, requestId: string): ApiContext {
