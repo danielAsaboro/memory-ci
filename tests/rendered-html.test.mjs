@@ -56,4 +56,6 @@ test("server-renders the Stash production identity", async (t) => {
   assert.match(html, />Stash</);
   assert.match(html, /https:\/\/trystash\.xyz/);
   assert.doesNotMatch(html, /Memory CI|Sandbox demo|chatgpt\.site/);
+  assert.doesNotMatch(html, /All controls healthy/);
+  assert.match(html, /Runtime status pending/);
 });

@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={20} /></button>
           <div className="global-search"><Search size={16} aria-hidden="true" /><span>Search memory, changes, agents…</span><kbd>⌘ K</kbd></div>
-          <div className="topbar-actions"><span className="status-chip good"><span />All controls healthy</span><span className="avatar">AM</span></div>
+          <div className="topbar-actions"><span className="status-chip pending"><span />Runtime status pending</span><span className="avatar">AM</span></div>
         </header>
         <main className="page-shell">{children}</main>
       </div>
