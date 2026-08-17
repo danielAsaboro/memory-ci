@@ -65,6 +65,7 @@ describe("CockroachDB migrations", () => {
       "source_artifacts",
       "sources",
       "tenants",
+      "workspace_bootstraps",
     ]);
   });
 

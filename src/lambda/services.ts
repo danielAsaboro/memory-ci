@@ -16,6 +16,8 @@ import { retrieveActiveMemory } from "../services/retrieve-memory";
 import { decideReview } from "../services/review-candidate";
 import { rollbackMemory } from "../services/rollback-memory";
 
+export { bootstrapWorkspace } from "../services/bootstrap-workspace";
+
 const asString = (input: Record<string, unknown>, key: string) => {
   const value = input[key];
   if (typeof value !== "string") throw new DomainError("invalid_input", `${key} is required.`);
