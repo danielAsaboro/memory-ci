@@ -102,6 +102,7 @@ describe("production audit", () => {
     ["unanchored strict dynamic", "script-src 'self' 'strict-dynamic'"],
     ["duplicate default source with safe final value", "default-src *; default-src 'self'; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'"],
     ["duplicate script source with safe final value", "default-src 'self'; script-src https://attacker.example; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'"],
+    ["mixed-case duplicate sources", "DEFAULT-SRC *; default-src 'self'; SCRIPT-SRC https://attacker.example; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'"],
   ])("rejects %s CSP bypasses", async (_label, policy) => {
     const result = await auditProduction(await fixture({
       "next.config.mjs": `export default { async headers() { return [{ source: "/(.*)", headers: [

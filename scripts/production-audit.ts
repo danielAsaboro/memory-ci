@@ -142,7 +142,7 @@ function isProductionApiEndpoint(value: string | undefined): boolean {
 function isProductionContentSecurityPolicy(value: string): boolean {
   const entries = value.split(";").map((directive) => directive.trim()).filter(Boolean).map((directive) => {
     const [name, ...sources] = directive.split(/\s+/);
-    return [name, sources] as const;
+    return [name.toLowerCase(), sources] as const;
   });
   const securityRelevant = new Set(["default-src", "script-src", "base-uri", "object-src", "frame-ancestors", "form-action"]);
   if (entries.some(([name], index) => securityRelevant.has(name) && entries.findIndex(([other]) => other === name) !== index)) return false;
