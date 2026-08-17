@@ -100,6 +100,7 @@ export function createApiServices(pool: Pool): ApiServices {
       return new LifecycleReceiptRepository(transaction).replay({ operation: "candidate.evaluate", resourceId: candidateId, idempotencyKey: asString(input, "idempotencyKey"), request: input, execute: async () => {
       const candidate = await new CandidateRepository(transaction).get(candidateId);
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
+      await transaction.client.query("SELECT id FROM memory_candidates WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [context.tenantId, candidateId]);
       const existing = await transaction.client.query<{ id: string }>(
         `SELECT id FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='candidate.evaluation_requested' AND delivered_at IS NULL
          ORDER BY created_at ASC,id ASC LIMIT 1`, [context.tenantId, candidateId],

@@ -12,6 +12,7 @@ import { LifecycleReceiptRepository } from "./lifecycle-receipts";
 import { migrate } from "./migrate";
 import { OutboxRepository } from "./outbox";
 import { ReviewRepository } from "./reviews";
+import { createApiServices } from "../lambda/services";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ??
   "postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable";
@@ -130,6 +131,23 @@ describe("tenant-bound repositories", () => {
     expect(hidden).toBeNull();
     expect(transitioned.state).toBe("screening");
     expect(transitioned.canonicalPayload).toEqual({ refundReviewThreshold: 150 });
+  });
+
+  it("deduplicates concurrent evaluation requests with different lifecycle keys", async () => {
+    const seeded = await seed(`evaluation-dedup-${randomUUID()}`);
+    const candidate = await createCandidate(seeded, "dedup-digest", "dedup-candidate");
+    await withTenantTransaction(pool, seeded.tenantId, (transaction) => new CandidateRepository(transaction).transition(candidate.id, "screening").then(() => new CandidateRepository(transaction).transition(candidate.id, "evaluating")));
+    const services = createApiServices(pool); const context = { tenantId: seeded.tenantId, principalId: seeded.principalId, requestId: "dedup-request", roles: ["admin"] };
+    const start = Promise.resolve();
+    const [first, second] = await Promise.all([
+      start.then(() => services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-a" })),
+      start.then(() => services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-b" })),
+    ]);
+    expect(first).toMatchObject({ candidateId: candidate.id, status: "queued" }); expect(second).toMatchObject({ eventId: (first as { eventId: string }).eventId });
+    const rows = await pool.query<{ count: string }>("SELECT count(*) FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='candidate.evaluation_requested'", [seeded.tenantId, candidate.id]);
+    expect(rows.rows[0]?.count).toBe("1");
+    await expect(services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-a" })).resolves.toEqual(first);
+    await expect(services.evaluateCandidate(context, { candidateId: candidate.id, idempotencyKey: "evaluate-key-b" })).resolves.toEqual(second);
   });
 
   it("binds reviews to fresh evidence and atomically promotes, supersedes, reads history, and rolls back", async () => {

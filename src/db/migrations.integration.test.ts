@@ -21,7 +21,7 @@ const migrationDirectory = fileURLToPath(new URL("../../db/migrations", import.m
 let admin: Client;
 let database: Client;
 
-async function migrateThrough005(url: string): Promise<void> {
+async function migrateThrough(url: string, lastFile: string): Promise<void> {
   const client = new Client({ connectionString: url });
   await client.connect();
   try {
@@ -29,7 +29,7 @@ async function migrateThrough005(url: string): Promise<void> {
       name STRING PRIMARY KEY, checksum STRING NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`);
     const files = (await readdir(migrationDirectory))
-      .filter((file) => file.endsWith(".sql") && file <= "005_workspace_sessions.sql")
+      .filter((file) => file.endsWith(".sql") && file <= lastFile)
       .sort((left, right) => left.localeCompare(right));
     for (const file of files) {
       const sql = await readFile(path.join(migrationDirectory, file), "utf8");
@@ -118,7 +118,7 @@ describe("CockroachDB migrations", () => {
     await admin.query(`CREATE DATABASE ${upgradeDatabaseName}`);
     const upgrade = new Client({ connectionString: upgradeDatabaseUrl.toString() });
     try {
-      await migrateThrough005(upgradeDatabaseUrl.toString());
+      await migrateThrough(upgradeDatabaseUrl.toString(), "005_workspace_sessions.sql");
       await upgrade.connect();
       const tenantId = randomUUID();
       const principalId = randomUUID();
@@ -309,5 +309,30 @@ describe("CockroachDB migrations", () => {
     await expect(database.query("DELETE FROM activation_events WHERE false")).rejects.toThrow(/permission|privilege/i);
     await expect(database.query("UPDATE reviews SET reason = reason WHERE false")).rejects.toThrow(/permission|privilege/i);
     await database.query("RESET ROLE");
+  });
+
+  it("upgrades 007 evaluation evidence without changing provider traces", async () => {
+    const name = `evaluation_upgrade_${randomUUID().replaceAll("-", "")}`; const url = new URL(adminUrl); url.pathname = `/${name}`;
+    await admin.query(`CREATE DATABASE ${name}`); const upgrade = new Client({ connectionString: url.toString() });
+    try {
+      await migrateThrough(url.toString(), "007_lifecycle_idempotency.sql"); await upgrade.connect();
+      const [tenantId, principalId, namespaceId, sourceId, candidateId, scenarioId, runId, resultId] = Array.from({ length: 8 }, () => randomUUID());
+      const vector = `[${Array.from({ length: 1024 }, () => "0").join(",")}]`;
+      await upgrade.query("INSERT INTO tenants (id,slug,name) VALUES ($1,$2,'Evaluation upgrade')", [tenantId, `upgrade-${tenantId}`]);
+      await upgrade.query("INSERT INTO principals (tenant_id,id,kind,display_name) VALUES ($1,$2,'human','Owner')", [tenantId, principalId]);
+      await upgrade.query("INSERT INTO agent_namespaces (tenant_id,id,slug,name) VALUES ($1,$2,'refunds','Refunds')", [tenantId, namespaceId]);
+      await upgrade.query("INSERT INTO sources (tenant_id,id,source_type,trust_class,content_digest,submitted_by) VALUES ($1,$2,'operator','authoritative','source',$3)", [tenantId, sourceId, principalId]);
+      await upgrade.query("INSERT INTO memory_candidates (tenant_id,id,namespace_id,state,memory_class,trust_class,canonical_payload,canonical_text,content_digest,source_id,created_by,embedding) VALUES ($1,$2,$3,'evaluating','policy','authoritative','{}','Refund policy','candidate',$4,$5,$6::VECTOR)", [tenantId, candidateId, namespaceId, sourceId, principalId, vector]);
+      await upgrade.query("INSERT INTO evaluation_scenarios (tenant_id,id,namespace_id,name,input_payload,assertions,embedding) VALUES ($1,$2,$3,'scenario','{}','{}',$4::VECTOR)", [tenantId, scenarioId, namespaceId, vector]);
+      await upgrade.query("INSERT INTO evaluation_runs (tenant_id,id,candidate_id,baseline_revision,policy_version,status,provider_request_id) VALUES ($1,$2,$3,1,'v1','passed','bedrock-trace')", [tenantId, runId, candidateId]);
+      await upgrade.query("INSERT INTO evaluation_results (tenant_id,id,evaluation_run_id,scenario_id,status,baseline_trajectory,candidate_trajectory,behavioral_diff,deterministic_assertions) VALUES ($1,$2,$3,$4,'passed','{}','{}','{}','{}')", [tenantId, resultId, runId, scenarioId]);
+      await migrate(url.toString());
+      const triggerEventId = randomUUID();
+      await expect(upgrade.query("INSERT INTO evaluation_runs (tenant_id,id,candidate_id,baseline_revision,policy_version,status,trigger_event_id) VALUES ($1,$2,$3,1,'v1','running',$4)", [tenantId, randomUUID(), candidateId, triggerEventId])).resolves.toBeDefined();
+      await expect(upgrade.query("INSERT INTO evaluation_runs (tenant_id,id,candidate_id,baseline_revision,policy_version,status,trigger_event_id) VALUES ($1,$2,$3,1,'v1','running',$4)", [tenantId, randomUUID(), candidateId, triggerEventId])).rejects.toThrow();
+      const preserved = await upgrade.query<{ provider_request_id: string; result_scope: string; scenario_id: string | null }>("SELECT r.provider_request_id,e.result_scope,e.scenario_id FROM evaluation_runs r JOIN evaluation_results e ON e.tenant_id=r.tenant_id AND e.evaluation_run_id=r.id WHERE r.tenant_id=$1 AND r.id=$2", [tenantId, runId]);
+      expect(preserved.rows).toEqual([{ provider_request_id: "bedrock-trace", result_scope: "scenario", scenario_id: scenarioId }]);
+      await expect(upgrade.query("INSERT INTO evaluation_results (tenant_id,id,evaluation_run_id,scenario_id,result_scope,status,baseline_trajectory,candidate_trajectory,behavioral_diff,deterministic_assertions) VALUES ($1,$2,$3,NULL,'scenario','inconclusive','{}','{}','{}','{}')", [tenantId, randomUUID(), runId])).rejects.toThrow();
+    } finally { await upgrade.end(); await admin.query(`DROP DATABASE ${name} CASCADE`); }
   });
 });
