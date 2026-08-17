@@ -87,7 +87,7 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
       if (Date.now() >= deadline) { expire(); return; }
       if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).find((item) => item.candidateId === candidate.id && item.triggerEventId === evaluationRequest?.eventId); if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
       const result = await getEvaluation(effectiveEvaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
-      if (terminal.has(result.status)) { setEvaluationRequest(null); setNotice(`Evaluation ${result.status}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
+      if (terminal.has(result.status)) { setEvaluationRequest(null); setNotice(`Evaluation ${result.status[0]!.toUpperCase()}${result.status.slice(1)}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
       schedule(delays[attempt++] ?? 5_000);
     } catch (error) { if (active && !controller.signal.aborted) { if (pollDeadline.current === activeDeadline) pollDeadline.current = null; settle(); setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } } };
     schedule(delays[attempt++] ?? 1_000); return settle;

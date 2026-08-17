@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="workspace-switcher">
           <span className="workspace-avatar">{initials}</span>
-          <span><strong>{workspaceName}</strong><small>{state === "ready" ? "Workspace session ready" : state === "error" ? "Workspace unavailable" : "Connecting"}</small></span>
+          <span><strong>{workspaceName}</strong><small>{state === "ready" ? "Workspace session ready" : state === "error" ? "Workspace unavailable" : "Connecting"}</small>{workspace ? <small data-testid="workspace-id">{workspace.tenantId}</small> : null}</span>
           <ChevronDown size={15} aria-hidden="true" />
         </div>
         <nav className="nav-list">

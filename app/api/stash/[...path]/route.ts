@@ -5,7 +5,8 @@ import { verifyWorkspaceSession } from "../../../../src/auth/workspace-session";
 import {
   agentSchema, auditEventSchema, candidateStateSchema, candidateSummarySchema, evaluationDetailSchema,
   evaluationStatusSchema, evaluationSummarySchema, identifierSchema, memoryClassSchema, memoryDetailSchema, memorySummarySchema,
-  nullableTimestampSchema, overviewSchema, timestampSchema, trustClassSchema, workspaceStatusSchema,
+  memoryMutationReceiptSchema, nullableTimestampSchema, overviewSchema, reviewReceiptSchema, screeningReceiptSchema,
+  timestampSchema, trustClassSchema, workspaceStatusSchema,
 } from "../../../../src/contracts/dashboard";
 import { relationTypes } from "../../../../src/domain/relations";
 
@@ -15,12 +16,6 @@ const PROXY_TIMEOUT_MS = 10_000;
 const stableIdentifierSchema = z.string().regex(/^[A-Za-z0-9_-]{1,255}$/);
 const upstreamRequestIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/);
 
-const internalCandidateSchema = z.object({
-  id: identifierSchema, tenantId: identifierSchema, namespaceId: identifierSchema, lineageId: identifierSchema.nullable(),
-  state: candidateStateSchema, memoryClass: memoryClassSchema, trustClass: trustClassSchema,
-  canonicalPayload: z.record(z.string(), z.unknown()), contentDigest: z.string().min(1).max(128),
-  sourceId: identifierSchema, createdBy: identifierSchema, createdAt: timestampSchema,
-}).strict();
 const candidateDetailProviderSchema = z.object({
   id: identifierSchema, namespaceId: identifierSchema, namespaceName: z.string().min(1).max(255), lineageId: identifierSchema.nullable(),
   state: candidateStateSchema, memoryClass: memoryClassSchema, trustClass: trustClassSchema, canonicalText: z.string().max(50_000),
@@ -38,20 +33,7 @@ const candidateReceiptSchema = z.object({
   id: identifierSchema, state: candidateStateSchema, contentDigest: z.string().min(1).max(128),
   provenanceVerified: z.boolean(), redactions: z.array(z.string().min(1).max(255)),
 }).strict();
-const screenResponseSchema = z.object({
-  candidate: internalCandidateSchema,
-  findings: z.array(z.object({
-    ruleId: z.string().min(1).max(100), severity: z.enum(["low", "medium", "high", "critical"]),
-    message: z.string().min(1).max(500), evidence: z.string().max(500).optional(),
-  }).strict()),
-}).strict();
 const evaluationQueuedSchema = z.object({ candidateId: identifierSchema, status: z.literal("queued"), eventId: identifierSchema }).strict();
-const internalReviewSchema = z.object({
-  id: identifierSchema, candidateId: identifierSchema, reviewerId: identifierSchema,
-  decision: z.enum(["approved", "rejected", "quarantined"]), reason: z.string().min(1).max(2_000),
-  candidateDigest: z.string().min(1).max(128), evaluationRunId: identifierSchema,
-  baselineRevision: z.number().int().nonnegative(), policyVersion: z.string().min(1).max(255),
-}).strict();
 const memorySearchSchema = z.object({
   namespaceId: identifierSchema, revision: z.number().int().nonnegative(), memories: z.array(internalMemorySchema),
 }).strict();
@@ -73,24 +55,11 @@ type GatewayConfig = { apiBaseUrl: string; sessionSecret: string };
 type RouteDefinition = { method: "GET" | "POST"; segments: readonly (string | "id")[]; schema: ZodType; project: (value: unknown) => unknown };
 
 const identity = (value: unknown) => value;
-const publicCandidate = (value: z.infer<typeof internalCandidateSchema>) => ({
-  id: value.id, namespaceId: value.namespaceId, lineageId: value.lineageId, state: value.state,
-  memoryClass: value.memoryClass, trustClass: value.trustClass, contentDigest: value.contentDigest, createdAt: value.createdAt,
-});
 const publicMemory = (value: z.infer<typeof internalMemorySchema>) => ({
   id: value.id, namespaceId: value.namespaceId, lineageId: value.lineageId, candidateId: value.candidateId,
   version: value.version, revision: value.revision, active: value.active, contentDigest: value.contentDigest,
   validFrom: value.validFrom, validUntil: value.validUntil,
 });
-const projectScreen = (value: unknown) => {
-  const response = screenResponseSchema.parse(value);
-  return { candidate: publicCandidate(response.candidate), findings: response.findings.map(({ ruleId, severity, message }) => ({ ruleId, severity, message })) };
-};
-const projectReview = (value: unknown) => {
-  const review = internalReviewSchema.parse(value);
-  return { id: review.id, candidateId: review.candidateId, decision: review.decision, evaluationRunId: review.evaluationRunId, baselineRevision: review.baselineRevision, policyVersion: review.policyVersion };
-};
-const projectMemory = (value: unknown) => publicMemory(internalMemorySchema.parse(value));
 const projectCandidateDetail = (value: unknown) => {
   const candidate = candidateDetailProviderSchema.parse(value);
   return {
@@ -124,11 +93,11 @@ const routes: readonly RouteDefinition[] = [
   { method: "POST", segments: ["v1", "candidates"], schema: candidateReceiptSchema, project: identity },
   { method: "GET", segments: ["v1", "candidates"], schema: z.array(candidateSummarySchema), project: identity },
   { method: "GET", segments: ["v1", "candidates", "id"], schema: candidateDetailProviderSchema, project: projectCandidateDetail },
-  { method: "POST", segments: ["v1", "candidates", "id", "screen"], schema: screenResponseSchema, project: projectScreen },
+  { method: "POST", segments: ["v1", "candidates", "id", "screen"], schema: screeningReceiptSchema, project: identity },
   { method: "POST", segments: ["v1", "candidates", "id", "evaluate"], schema: evaluationQueuedSchema, project: identity },
-  { method: "POST", segments: ["v1", "candidates", "id", "reviews"], schema: internalReviewSchema, project: projectReview },
-  { method: "POST", segments: ["v1", "candidates", "id", "promote"], schema: internalMemorySchema, project: projectMemory },
-  { method: "POST", segments: ["v1", "lineages", "id", "rollback"], schema: internalMemorySchema, project: projectMemory },
+  { method: "POST", segments: ["v1", "candidates", "id", "reviews"], schema: reviewReceiptSchema, project: identity },
+  { method: "POST", segments: ["v1", "candidates", "id", "promote"], schema: memoryMutationReceiptSchema, project: identity },
+  { method: "POST", segments: ["v1", "lineages", "id", "rollback"], schema: memoryMutationReceiptSchema, project: identity },
   { method: "POST", segments: ["v1", "memory", "search"], schema: memorySearchSchema, project: projectMemorySearch },
   { method: "GET", segments: ["v1", "memory", "id", "explain"], schema: explanationSchema, project: projectExplanation },
   { method: "GET", segments: ["v1", "namespaces", "id", "revision"], schema: namespaceRevisionSchema, project: identity },

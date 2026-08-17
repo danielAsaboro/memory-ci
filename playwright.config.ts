@@ -7,15 +7,15 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3301",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run build && npm run start -- --host 127.0.0.1",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120_000,
+    command: "tsx scripts/e2e-run.ts",
+    url: "http://localhost:3301",
+    reuseExistingServer: false,
+    timeout: 180_000,
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

@@ -106,7 +106,7 @@ export async function handler(event: GatewayEvent) {
       auth: createWorkspaceSessionVerifier(requiredEnvironment("STASH_SESSION_SECRET")),
       membership: { hasMembership: async (principalId, tenantId) => {
         const principal = await runtime.pool.query<{ id: string }>(
-          "SELECT id FROM principals WHERE tenant_id=$1 AND id=$2 AND active LIMIT 1", [tenantId, principalId],
+          "SELECT id FROM principals WHERE tenant_id=$1 AND id=$2 LIMIT 1", [tenantId, principalId],
         );
         return Boolean(principal.rows[0]);
       } },

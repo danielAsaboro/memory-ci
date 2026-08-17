@@ -46,6 +46,7 @@ export async function POST(): Promise<Response> {
     const bootstrapResponse = await fetch(`${config.apiBaseUrl}/v1/workspaces`, {
       method: "POST",
       signal: controller.signal,
+      body: JSON.stringify({ displayName: "Stash workspace" }),
       headers: {
         "Content-Type": "application/json",
         "Idempotency-Key": crypto.randomUUID(),
@@ -68,7 +69,7 @@ export async function POST(): Promise<Response> {
       name: COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.STASH_E2E !== "1",
       sameSite: "lax",
       path: "/",
       maxAge: WORKSPACE_SESSION_MAX_AGE_SECONDS,

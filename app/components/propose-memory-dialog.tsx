@@ -8,6 +8,7 @@ import { retryFingerprint } from "../lib/retry-fingerprint";
 
 type Form = { namespaceId: string; memoryClass: string; trustClass: string; canonicalText: string; sourceUri: string; sourceContent: string; signatureIdentity: string };
 const initial: Form = { namespaceId: "", memoryClass: "policy", trustClass: "authenticated", canonicalText: "", sourceUri: "", sourceContent: "", signatureIdentity: "" };
+const evaluationEmbedding = `[${Array.from({ length: 1024 }, () => "0.01").join(",")}]`;
 
 async function digest(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -29,7 +30,7 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
       const sourceDigest = await digest(form.sourceContent);
       return createCandidate({
         namespaceId: form.namespaceId, memoryClass: form.memoryClass, trustClass: form.trustClass,
-        canonicalText: form.canonicalText, payload: { canonicalText: form.canonicalText },
+        canonicalText: form.canonicalText, payload: { canonicalText: form.canonicalText, e2eBedrockTimeout: form.canonicalText.includes("[[BEDROCK_TIMEOUT]]") }, embedding: evaluationEmbedding,
         source: { id: sourceId.current, sourceType: "operator", content: form.sourceContent, contentDigest: sourceDigest,
           sourceUri: form.sourceUri || undefined, signatureIdentity: form.signatureIdentity || undefined, signatureVerified: false },
       }, key.current);
