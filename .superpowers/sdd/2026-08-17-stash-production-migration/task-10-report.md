@@ -45,3 +45,21 @@ The only deterministic double is the Bedrock semantic-judge adapter boundary in 
 - The test harness gets its Cockroach admin URL from the existing integration-test configuration and creates/drops a unique database; it does not hardcode deployment credentials.
 - Next emits pre-existing advisory warnings about `experimental.typedRoutes` and multiple lockfiles in this worktree. They do not fail the release gates.
 - The application has no browser-exposed mechanism to manufacture a cryptographic signature. The safe lifecycle uses an observed, evidence-backed threshold change while the server retains the existing trust and review gates; Bedrock is the sole stubbed external boundary.
+
+## Fix Round 2
+
+- RED/GREEN provenance: the previous browser-generated public key was an unauthenticated trust root. `STASH_TRUSTED_SOURCE_KEYS` is now a validated server-only JSON registry keyed by stable identity and key ID. The UI submits only identity, key ID, and signature; the server verifies Ed25519 over canonical `{version,content}`, persists identity/key fingerprint/algorithm/signature/canonical payload/version, and downgrades an unverified claimed authenticated source to observed. Browser evidence signs with the E2E harness's corresponding private key and proves altered evidence is quarantined.
+- RED/GREEN retrieval: active reads now obtain their query vector through the same injected `createEmbeddingProvider` contract used for ingestion and execute Cockroach vector search. The normalized lexical adapter is explicitly local E2E/test-only; production fails closed without a managed Bedrock embedding model. Browser evidence retrieves the promoted unique policy using a paraphrase with no literal overlap and excludes it for a nonmatching distractor.
+- Audit evidence is response-correlated, not first-match: Playwright observes each screen/evaluate/review/promote/rollback response `x-request-id`, then asserts exactly that request ID and exact candidate/memory ID on the authoritative audit event.
+- Session cookies are now always `Secure`; the E2E/Host loopback downgrade was removed. The regression test proves `STASH_E2E=1` cannot clear the Secure attribute. Desktop and mobile browser journeys both retained their real session on loopback.
+- The E2E harness now registers idempotent cleanup before migration/service setup, cleans pool/server/artifacts/unique database on setup errors and normal stop, and rejects listen errors rather than hanging.
+
+### Fix Round 2 evidence
+
+- Focused RED/GREEN: `npm run test -- --run src/services/ingest-candidate.test.ts app/api/session/route.test.ts` — 17 passed; `npm run test:e2e -- --project=desktop -g 'evaluates, approves'` — 1 passed; `npm run test:e2e -- --project=mobile tests/e2e/poison-and-promote.spec.ts` — 4 passed.
+- Full post-change chain: `npm run verify && npm run test:e2e && npm run infra:validate && npm run infra:build && npm run production:audit` — PASS. `verify`: 32 unit files / 217 tests and integration suite; E2E includes desktop/mobile persisted lifecycle journeys; infrastructure validate/build and production audit completed successfully.
+
+### Corrected concerns
+
+- The local embedding adapter and Bedrock semantic-judge adapter exist only at the E2E/test external-provider boundary. Production has no lexical embedding fallback and requires managed Bedrock configuration. Task 11 remains responsible for live AWS provider deployment.
+- The test-only trusted private key is confined to the Playwright spec; the server sees only its configured public registry entry. No private key is exposed through the product UI or production configuration.

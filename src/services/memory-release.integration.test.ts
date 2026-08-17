@@ -127,10 +127,10 @@ describe("memory release flow", () => {
 
     const current = await withTenantTransaction(pool, tenantId, (transaction) => retrieveActiveMemory(transaction, agentContext, {
       namespaceId, query: "When does a refund require review?", purpose: "customer_support",
-    }));
+    }, { embed: async () => embedding }));
     const pinned = await withTenantTransaction(pool, tenantId, (transaction) => retrieveActiveMemory(transaction, agentContext, {
       namespaceId, revision: 1, query: "Prior threshold", purpose: "incident_replay",
-    }));
+    }, { embed: async () => embedding }));
     const explanation = await withTenantTransaction(pool, tenantId, (transaction) => explainMemory(transaction, active2.id));
 
     expect(current.revision).toBe(2);
@@ -149,7 +149,7 @@ describe("memory release flow", () => {
     }));
     const afterRollback = await withTenantTransaction(pool, tenantId, (transaction) => retrieveActiveMemory(transaction, agentContext, {
       namespaceId, query: "Current threshold", purpose: "customer_support",
-    }));
+    }, { embed: async () => embedding }));
     expect(rolledBack.revision).toBe(3);
     expect(afterRollback.memories[0]?.contentDigest).toBe("refund-policy-v1");
 

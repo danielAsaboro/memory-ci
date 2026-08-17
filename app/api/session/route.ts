@@ -21,7 +21,7 @@ type SessionConfig = {
   sessionSecret: string;
 };
 
-export async function POST(request: Request = new Request("http://localhost/api/session")): Promise<Response> {
+export async function POST(): Promise<Response> {
   let config: SessionConfig;
   try {
     config = readSessionConfig();
@@ -69,7 +69,7 @@ export async function POST(request: Request = new Request("http://localhost/api/
       name: COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && !(process.env.STASH_E2E === "1" && isLoopback(request)),
+      secure: true,
       sameSite: "lax",
       path: "/",
       maxAge: WORKSPACE_SESSION_MAX_AGE_SECONDS,
@@ -80,10 +80,6 @@ export async function POST(request: Request = new Request("http://localhost/api/
   } finally {
     clearTimeout(timer);
   }
-}
-
-function isLoopback(request: Request): boolean {
-  try { return ["127.0.0.1", "::1", "localhost"].includes(new URL(request.url).hostname); } catch { return false; }
 }
 
 function readSessionConfig(): SessionConfig {

@@ -12,5 +12,6 @@ export async function promoteCandidate(
   return new MemoryRepository(transaction).promote({
     ...input,
     actorId: context.principalId,
+    requestId: context.requestId,
   });
 }

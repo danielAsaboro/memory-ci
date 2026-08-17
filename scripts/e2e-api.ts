@@ -70,7 +70,7 @@ async function drainEvaluations() {
             trajectories: { run: (scenario, revision) => runSandboxTrajectory({ tenantId: event.tenant_id, candidateId: event.aggregate_id, memoryRevision: revision.kind === "baseline" ? revision.revision : 1, scenario, revision }) },
             semanticJudge: async (input) => {
               const candidate = await transaction.client.query<{ canonical_text: string }>("SELECT canonical_text FROM memory_candidates WHERE tenant_id=$1 AND id=$2", [event.tenant_id, event.aggregate_id]);
-              return candidate.rows[0]?.canonical_text.includes("[[BEDROCK_TIMEOUT]]")
+              return candidate.rows[0]?.canonical_text.includes("e2e-provider-timeout-marker")
                 ? { status: "inconclusive" as const, errorCode: "timeout" as const, modelId: "e2e-bedrock-adapter", providerRequestId: "e2e-bedrock-timeout" }
                 : judgeBehavioralDiffWithBedrock(input, { modelId: "e2e-bedrock-adapter", transport: { async converse(request) {
                   const payload = JSON.parse(String(request.messages?.[0]?.content?.[0] && "text" in request.messages[0].content[0] ? request.messages[0].content[0].text : "{}")) as { behavioralDiff?: { hasBehavioralChange?: boolean } };
@@ -104,11 +104,24 @@ async function respond(response: ServerResponse, upstream: Response) {
 }
 
 export async function startE2eApi() {
+  let databaseCreated = false;
+  let server: ReturnType<typeof createServer> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return; cleaned = true;
+    if (interval) clearInterval(interval);
+    if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()));
+    await pool.end().catch(() => undefined);
+    if (artifactDirectory) await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
+    if (databaseCreated) await admin.query(`DROP DATABASE IF EXISTS ${databaseName} CASCADE`).catch(() => undefined);
+    await admin.end().catch(() => undefined);
+  };
+  try {
   await admin.connect();
-  await admin.query(`CREATE DATABASE ${databaseName}`);
+  await admin.query(`CREATE DATABASE ${databaseName}`); databaseCreated = true;
   artifactDirectory = await mkdtemp(join(tmpdir(), "stash-e2e-artifacts-"));
-  const cleanup = async () => { await pool.end().catch(() => undefined); await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined); await admin.query(`DROP DATABASE IF EXISTS ${databaseName} CASCADE`).catch(() => undefined); await admin.end().catch(() => undefined); };
-  try { await migrate(databaseUrl); } catch (error) { await cleanup(); throw error; }
+  await migrate(databaseUrl);
   const services = createApiServices(pool);
   const router = createRouter({
     auth: createWorkspaceSessionVerifier(secret),
@@ -116,7 +129,7 @@ export async function startE2eApi() {
     services,
     requestId: randomUUID,
   });
-  const server = createServer(async (request, response) => {
+  server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${apiPort}`);
     if (url.pathname === "/health") { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ status: "ok" })); return; }
     if (url.pathname.startsWith("/e2e/artifacts/") && request.method === "GET") { try { response.setHeader("content-type", "application/json"); response.end(await readFile(join(artifactDirectory, url.pathname.split("/").at(-1)!), "utf8")); } catch { response.statusCode = 404; response.end(); } return; }
@@ -130,11 +143,11 @@ export async function startE2eApi() {
     const requestBody = ["GET", "HEAD"].includes(request.method ?? "GET") ? undefined : await body(request);
     await respond(response, await router(new Request(url, { method: request.method, headers: request.headers as Record<string, string>, body: requestBody })));
   });
-  await new Promise<void>((resolve) => server.listen(apiPort, "127.0.0.1", resolve));
-  const interval = setInterval(() => { void drainEvaluations(); }, 100);
-  return async () => {
-    clearInterval(interval);
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await cleanup();
-  };
+  await new Promise<void>((resolve, reject) => {
+    server!.once("error", reject);
+    server!.listen(apiPort, "127.0.0.1", () => { server!.off("error", reject); resolve(); });
+  });
+  interval = setInterval(() => { void drainEvaluations(); }, 100);
+  return cleanup;
+  } catch (error) { await cleanup(); throw error; }
 }

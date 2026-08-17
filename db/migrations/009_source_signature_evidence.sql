@@ -1,0 +1,6 @@
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS signature_key_id STRING NULL;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS signature_key_fingerprint STRING NULL;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS signature_algorithm STRING NULL;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS signature STRING NULL;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS canonical_signed_payload STRING NULL;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS signature_payload_version INT8 NULL;

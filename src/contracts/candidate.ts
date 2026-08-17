@@ -19,10 +19,9 @@ export const candidateInputSchema = z.object({
     contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
     sourceUri: z.string().url().optional(),
     signatureIdentity: z.string().max(500).optional(),
-    signatureVerified: z.boolean(),
+    signatureKeyId: z.string().max(500).optional(),
     signatureAlgorithm: z.literal("ed25519").optional(),
     signature: z.string().min(1).max(16_384).optional(),
-    publicKey: z.string().min(1).max(16_384).optional(),
     validUntil: z.coerce.date().optional(),
   }),
 });

@@ -78,20 +78,19 @@ export class MemoryRepository {
     return result.rows.map((row) => ({ memory: mapMemory(row), distance: Number(row.distance) }));
   }
 
-  async searchActiveSemantic(namespaceId: string, embedding: string, terms: string[], limit = 10): Promise<MemoryVersion[]> {
+  async searchActiveSemantic(namespaceId: string, embedding: string, limit = 10): Promise<MemoryVersion[]> {
     const result = await this.transaction.client.query<MemoryRow>(
       `SELECT id,tenant_id,namespace_id,lineage_id,candidate_id,version,revision,active,canonical_payload,content_digest,valid_from,valid_until
-       FROM memory_versions WHERE tenant_id=$1 AND namespace_id=$2 AND active
-         AND canonical_text ILIKE ANY($4::STRING[])
-       ORDER BY embedding <=> $3::VECTOR LIMIT $5`,
-      [this.transaction.tenantId, namespaceId, embedding, terms.map((term) => `%${term}%`), limit],
+       FROM memory_versions WHERE tenant_id=$1 AND namespace_id=$2 AND active AND embedding <=> $3::VECTOR <= 0.8
+       ORDER BY embedding <=> $3::VECTOR LIMIT $4`,
+      [this.transaction.tenantId, namespaceId, embedding, limit],
     );
     return result.rows.map(mapMemory);
   }
 
   async promote(input: {
     candidateId: string; reviewId: string; actorId: string; stableKey: string;
-    reason: string; idempotencyKey: string;
+    reason: string; idempotencyKey: string; requestId?: string;
   }): Promise<MemoryVersion> {
     const prior = await this.findIdempotent(input.idempotencyKey, "memory.promote");
     if (prior) return prior;
@@ -168,6 +167,7 @@ export class MemoryRepository {
     await this.recordActivation(inserted.rows[0]!, "promoted", nextRevision, input.actorId, input.reason);
     await new AuditRepository(this.transaction).append({
       actorId: input.actorId, action: "memory.promoted", resourceType: "memory_version", resourceId: version.id,
+      requestId: input.requestId,
       safeDetails: { revision: nextRevision, candidateId: candidate.id },
     });
     await new OutboxRepository(this.transaction).enqueue({
@@ -179,7 +179,7 @@ export class MemoryRepository {
   }
 
   async rollback(input: {
-    lineageId: string; targetVersionId: string; actorId: string; reason: string; idempotencyKey: string;
+    lineageId: string; targetVersionId: string; actorId: string; reason: string; idempotencyKey: string; requestId?: string;
   }): Promise<MemoryVersion> {
     const prior = await this.findIdempotent(input.idempotencyKey, "memory.rollback");
     if (prior) return prior;
@@ -218,6 +218,7 @@ export class MemoryRepository {
     await this.recordActivation(inserted.rows[0]!, "rolled_back", nextRevision, input.actorId, input.reason);
     await new AuditRepository(this.transaction).append({
       actorId: input.actorId, action: "memory.rolled_back", resourceType: "memory_version", resourceId: version.id,
+      requestId: input.requestId,
       safeDetails: { revision: nextRevision, targetVersionId: input.targetVersionId },
     });
     await new OutboxRepository(this.transaction).enqueue({

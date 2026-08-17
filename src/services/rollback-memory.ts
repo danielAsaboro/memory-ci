@@ -7,5 +7,5 @@ export async function rollbackMemory(
   context: TenantContext,
   input: { lineageId: string; targetVersionId: string; reason: string; idempotencyKey: string },
 ): Promise<MemoryVersion> {
-  return new MemoryRepository(transaction).rollback({ ...input, actorId: context.principalId });
+  return new MemoryRepository(transaction).rollback({ ...input, actorId: context.principalId, requestId: context.requestId });
 }

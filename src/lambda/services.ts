@@ -18,6 +18,7 @@ import { createReadWorkspaceServices } from "../services/read-workspace";
 import { decideReview } from "../services/review-candidate";
 import { rollbackMemory } from "../services/rollback-memory";
 import { createEmbeddingProvider } from "../services/embedding-provider";
+import { createTrustedSourceKeyRegistry } from "../services/source-signature";
 
 export { bootstrapWorkspace } from "../services/bootstrap-workspace";
 
@@ -32,6 +33,7 @@ const requireLifecycleRole = (context: Parameters<ApiServices["getCandidate"]>[0
 
 export function createApiServices(pool: Pool): ApiServices {
   const embeddings = createEmbeddingProvider();
+  const trustedSourceKeys = createTrustedSourceKeyRegistry();
   const run = <T>(context: Parameters<ApiServices["getCandidate"]>[0], operation: (transaction: TenantTransaction) => Promise<T>) =>
     withTenantTransaction(pool, context.tenantId, operation);
   const readWorkspace = createReadWorkspaceServices(pool);
@@ -45,16 +47,18 @@ export function createApiServices(pool: Pool): ApiServices {
       } },
       sources: { upsert: async (source) => {
         await transaction.client.query(
-          `UPSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_verified,valid_until,submitted_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          `UPSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,valid_until,submitted_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
           [context.tenantId, source.id, source.sourceType, source.sourceUri, source.trustClass, source.contentDigest,
-            source.signatureIdentity, source.signatureVerified, source.validUntil, source.submittedBy],
+            source.signatureIdentity, source.signatureKeyId, source.signatureKeyFingerprint, source.signatureAlgorithm, source.signature,
+            source.canonicalSignedPayload, source.signaturePayloadVersion, source.signatureVerified, source.validUntil, source.submittedBy],
         );
         return { id: source.id };
       } },
       candidates: new CandidateRepository(transaction), audit: new AuditRepository(transaction),
       outbox: new OutboxRepository(transaction),
       embeddings,
+      trustedSourceKeys,
       authorizeProtectedNamespace: async () => context.roles.some((role) => role === "admin" || role === "reviewer"),
       id: randomUUID,
     })),
@@ -67,8 +71,8 @@ export function createApiServices(pool: Pool): ApiServices {
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
       if (candidate.state === "proposed") await candidates.transition(candidateId, "screening");
       const detail = await transaction.client.query<{
-        canonical_text: string; protected: boolean; signature_verified: boolean; valid_until: Date | null;
-      }>(`SELECT c.canonical_text,n.protected,s.signature_verified,s.valid_until FROM memory_candidates c
+        canonical_text: string; protected: boolean; signature_verified: boolean; signature_identity: string | null; valid_until: Date | null;
+      }>(`SELECT c.canonical_text,n.protected,s.signature_verified,s.signature_identity,s.valid_until FROM memory_candidates c
           JOIN agent_namespaces n ON n.tenant_id=c.tenant_id AND n.id=c.namespace_id
           JOIN sources s ON s.tenant_id=c.tenant_id AND s.id=c.source_id
           WHERE c.tenant_id=$1 AND c.id=$2`, [context.tenantId, candidateId]);
@@ -77,7 +81,7 @@ export function createApiServices(pool: Pool): ApiServices {
         "SELECT content_digest FROM memory_candidates WHERE tenant_id=$1 AND content_digest=$2 AND id<>$3", [context.tenantId, candidate.contentDigest, candidateId],
       );
       const findings = screen({ canonicalText: row.canonical_text, memoryClass: candidate.memoryClass,
-        trustClass: candidate.trustClass, namespaceProtected: row.protected, sourceSignatureVerified: row.signature_verified,
+        trustClass: row.signature_identity && !row.signature_verified ? "authenticated" : candidate.trustClass, namespaceProtected: row.protected, sourceSignatureVerified: row.signature_verified,
         sourceExpiresAt: row.valid_until ?? undefined, contentDigest: candidate.contentDigest,
         seenContentDigests: seen.rows.map((item) => item.content_digest), attributionPreserved: true, now: new Date() });
       for (const finding of findings) await transaction.client.query(
@@ -117,6 +121,8 @@ export function createApiServices(pool: Pool): ApiServices {
       if (candidate.state !== "evaluating") throw new DomainError("conflict", "Candidate is not ready for evaluation.");
       const event = await new OutboxRepository(transaction).enqueue({ eventType: "candidate.evaluation_requested",
         aggregateType: "memory_candidate", aggregateId: candidateId, payload: { tenantId: context.tenantId, candidateId } });
+      await new AuditRepository(transaction).append({ actorId: context.principalId, action: "candidate.evaluation_requested",
+        resourceType: "memory_candidate", resourceId: candidateId, requestId: context.requestId, safeDetails: { eventId: event.id } });
       return { candidateId, status: "queued", eventId: event.id };
       } });
     }),
@@ -161,7 +167,7 @@ export function createApiServices(pool: Pool): ApiServices {
     searchMemory: (context, input) => run(context, (transaction) => retrieveActiveMemory(transaction, context, {
       namespaceId: asString(input, "namespaceId"), query: asString(input, "query"), purpose: asString(input, "purpose"),
       revision: typeof input.revision === "number" ? input.revision : undefined,
-    })),
+    }, embeddings)),
     explainMemory: (context, input) => run(context, (transaction) => explainMemory(transaction, asString(input, "memoryId"))),
     namespaceRevision: (context, input) => run(context, async (transaction) => {
       const namespaceId = asString(input, "namespaceId");

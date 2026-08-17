@@ -87,6 +87,13 @@ describe("POST /api/session", () => {
     );
   });
 
+  it("keeps the session cookie Secure even when an E2E flag or forged Host is present", async () => {
+    vi.stubEnv("STASH_E2E", "1");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(workspace), { status: 201 })));
+    const response = await POST();
+    expect(response.headers.get("set-cookie")).toContain("Secure");
+  });
+
   it("reuses a valid workspace cookie without calling the bootstrap endpoint", async () => {
     cookieStore.get.mockReturnValue({
       value: await signWorkspaceSession(workspace, sessionSecret),

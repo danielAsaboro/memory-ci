@@ -6,6 +6,7 @@ import { DomainError } from "../domain/errors";
 import type { Candidate, TenantContext } from "../domain/types";
 import { ingestCandidate, type IngestionDependencies } from "./ingest-candidate";
 import { redactCandidatePayload } from "./redaction";
+import { canonicalSourceSignaturePayload, createTrustedSourceKeyRegistry } from "./source-signature";
 
 const context: TenantContext = {
   tenantId: "11111111-1111-4111-8111-111111111111",
@@ -39,6 +40,7 @@ function createHarness(overrides: Partial<IngestionDependencies> = {}) {
     audit: { async append(input) { calls.audit.push(input); return undefined; } },
     outbox: { async enqueue(input) { calls.outbox.push(input); return undefined; } },
     embeddings: { async embed() { return `[${Array.from({ length: 1024 }, () => "0").join(",")}]`; } },
+    trustedSourceKeys: createTrustedSourceKeyRegistry(),
     authorizeProtectedNamespace: async () => false,
     id: () => randomUUID(),
     ...overrides,
@@ -64,35 +66,37 @@ const baseInput = {
 
 describe("ingestCandidate", () => {
   it("verifies an Ed25519 signature over the exact submitted source evidence", async () => {
-    const { calls, dependencies } = createHarness();
-    const content = "Signed threshold evidence: refunds above $150 require review.";
     const keys = generateKeyPairSync("ed25519");
-    const signature = sign(null, Buffer.from(content), keys.privateKey).toString("base64");
     const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const { calls, dependencies } = createHarness({ trustedSourceKeys: createTrustedSourceKeyRegistry({ STASH_TRUSTED_SOURCE_KEYS: JSON.stringify([{ identity: "policy-owner", keyId: "v1", publicKey }]) }) });
+    const content = "Signed threshold evidence: refunds above $150 require review.";
+    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(content)), keys.privateKey).toString("base64");
 
     const receipt = await ingestCandidate(context, {
       ...baseInput,
-      source: { ...baseInput.source, content, contentDigest: sha256(content), signature, publicKey, signatureAlgorithm: "ed25519" },
+      source: { ...baseInput.source, signatureIdentity: "policy-owner", signatureKeyId: "v1", content, contentDigest: sha256(content), signature, signatureAlgorithm: "ed25519" },
     }, dependencies);
 
     expect(receipt.provenanceVerified).toBe(true);
     expect(calls.source[0]).toMatchObject({ signatureVerified: true });
   });
 
-  it("does not mark tampered signed evidence as verified", async () => {
-    const { calls, dependencies } = createHarness();
+  it("does not mark tampered or untrusted signed evidence as authenticated", async () => {
     const signedContent = "Signed threshold evidence: refunds above $150 require review.";
     const keys = generateKeyPairSync("ed25519");
-    const signature = sign(null, Buffer.from(signedContent), keys.privateKey).toString("base64");
+    const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(signedContent)), keys.privateKey).toString("base64");
     const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const { calls, dependencies } = createHarness({ trustedSourceKeys: createTrustedSourceKeyRegistry({ STASH_TRUSTED_SOURCE_KEYS: JSON.stringify([{ identity: "policy-owner", keyId: "v1", publicKey }]) }) });
 
     const receipt = await ingestCandidate(context, {
       ...baseInput,
-      source: { ...baseInput.source, content: `${signedContent} Tampered.`, contentDigest: sha256(`${signedContent} Tampered.`), signature, publicKey, signatureAlgorithm: "ed25519" },
+      trustClass: "authenticated",
+      source: { ...baseInput.source, signatureIdentity: "unknown", signatureKeyId: "v1", content: `${signedContent} Tampered.`, contentDigest: sha256(`${signedContent} Tampered.`), signature, signatureAlgorithm: "ed25519" },
     }, dependencies);
 
     expect(receipt.provenanceVerified).toBe(false);
     expect(calls.source[0]).toMatchObject({ signatureVerified: false });
+    expect(calls.candidate[0]).toMatchObject({ trustClass: "observed" });
   });
   it("canonicalizes key order, verifies provenance, and writes candidate, audit, and outbox receipts", async () => {
     const { calls, dependencies } = createHarness();

@@ -4,12 +4,14 @@ import { DomainError } from "../domain/errors";
 import { candidateInputSchema, type CandidateInput } from "../contracts/candidate";
 import { canonicalJson, sha256, verifyProvenanceDigest } from "./provenance";
 import { redactCandidatePayload } from "./redaction";
-import { verifySourceSignature } from "./source-signature";
+import { keyFingerprint, type TrustedSourceKeyRegistry, verifyTrustedSourceSignature } from "./source-signature";
 
 type SourceInput = Readonly<{
   id: string; tenantId: string; sourceType: CandidateInput["source"]["sourceType"];
   sourceUri: string | null; trustClass: CandidateInput["trustClass"]; contentDigest: string;
-  signatureIdentity: string | null; signatureVerified: boolean; validUntil: Date | null; submittedBy: string;
+  signatureIdentity: string | null; signatureKeyId: string | null; signatureKeyFingerprint: string | null;
+  signatureAlgorithm: string | null; signature: string | null; canonicalSignedPayload: string | null;
+  signaturePayloadVersion: number | null; signatureVerified: boolean; validUntil: Date | null; submittedBy: string;
 }>;
 
 export type IngestionDependencies = Readonly<{
@@ -19,6 +21,7 @@ export type IngestionDependencies = Readonly<{
   audit: { append(input: Record<string, unknown>): Promise<unknown> };
   outbox: { enqueue(input: { eventType: string; aggregateType: string; aggregateId: string; payload: Readonly<Record<string, unknown>> }): Promise<unknown> };
   embeddings: { embed(text: string): Promise<string> };
+  trustedSourceKeys: TrustedSourceKeyRegistry;
   authorizeProtectedNamespace(context: TenantContext, namespaceId: string): Promise<boolean>;
   id(): string;
 }>;
@@ -57,17 +60,22 @@ export async function ingestCandidate(
   }
   const contentDigest = sha256(canonical);
 
-  const signatureVerified = verifySourceSignature(input.source);
+  const signature = verifyTrustedSourceSignature(input.source, dependencies.trustedSourceKeys);
+  const signatureVerified = signature.verified;
+  const trustClass = input.trustClass === "authenticated" && !signatureVerified ? "observed" : input.trustClass;
   await dependencies.sources.upsert({
     id: input.source.id, tenantId: context.tenantId, sourceType: input.source.sourceType,
-    sourceUri: input.source.sourceUri ?? null, trustClass: input.trustClass,
+    sourceUri: input.source.sourceUri ?? null, trustClass,
     contentDigest: input.source.contentDigest, signatureIdentity: input.source.signatureIdentity ?? null,
+    signatureKeyId: input.source.signatureKeyId ?? null, signatureKeyFingerprint: signature.key ? keyFingerprint(signature.key.publicKey) : null,
+    signatureAlgorithm: input.source.signatureAlgorithm ?? null, signature: input.source.signature ?? null,
+    canonicalSignedPayload: signature.canonicalPayload, signaturePayloadVersion: signature.canonicalPayload ? 1 : null,
     signatureVerified, validUntil: input.source.validUntil ?? null,
     submittedBy: context.principalId,
   });
   const candidate = await dependencies.candidates.create({
     id: dependencies.id(), namespaceId: input.namespaceId, lineageId: null, state: "proposed",
-    memoryClass: input.memoryClass, trustClass: input.trustClass,
+    memoryClass: input.memoryClass, trustClass,
     canonicalPayload: redacted.payload, canonicalText: redacted.canonicalText, contentDigest,
     sourceId: input.source.id, createdBy: context.principalId, embedding: await dependencies.embeddings.embed(redacted.canonicalText),
     idempotencyKey: input.idempotencyKey,

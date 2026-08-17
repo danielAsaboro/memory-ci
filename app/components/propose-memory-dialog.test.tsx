@@ -38,7 +38,7 @@ describe("ProposeMemoryDialog", () => {
     expect(JSON.parse(first.body as string)).toMatchObject({
       namespaceId: "22222222-2222-4222-8222-222222222222",
       canonicalText: "Refunds above $150 require review.",
-      source: { sourceUri: "https://records.example/refunds", content: "Signed refund policy update.", signatureVerified: false },
+      source: { sourceUri: "https://records.example/refunds", content: "Signed refund policy update." },
     });
   });
 });
