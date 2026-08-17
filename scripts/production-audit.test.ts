@@ -19,7 +19,7 @@ async function fixture(files: Record<string, string>): Promise<string> {
   const safeConfig = `export default {
   async headers() {
     return [{ source: "/(.*)", headers: [
-      { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'strict-dynamic'" },
+      { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Permissions-Policy", value: "camera=()" },
@@ -94,6 +94,38 @@ describe("production audit", () => {
       ] }]; } };`,
     }));
     expect(result.violations.map((violation) => violation.ruleId)).toContain("SECURITY_HEADERS");
+  });
+
+  it.each([
+    ["wildcard script host", "script-src 'self' 'nonce-safeNonce123' 'strict-dynamic' https://*.attacker.example"],
+    ["external script origin", "script-src 'self' 'nonce-safeNonce123' 'strict-dynamic' https://attacker.example"],
+    ["unanchored strict dynamic", "script-src 'self' 'strict-dynamic'"],
+    ["duplicate default source with safe final value", "default-src *; default-src 'self'; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'"],
+    ["duplicate script source with safe final value", "default-src 'self'; script-src https://attacker.example; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'"],
+  ])("rejects %s CSP bypasses", async (_label, policy) => {
+    const result = await auditProduction(await fixture({
+      "next.config.mjs": `export default { async headers() { return [{ source: "/(.*)", headers: [
+        { key: "Content-Security-Policy", value: "${policy}" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Permissions-Policy", value: "camera=()" },
+        { key: "Strict-Transport-Security", value: "max-age=63072000" },
+      ] }]; } };`,
+    }));
+    expect(result.violations.map((violation) => violation.ruleId)).toContain("SECURITY_HEADERS");
+  });
+
+  it("accepts a nonce-anchored strict-dynamic CSP", async () => {
+    const result = await auditProduction(await fixture({
+      "next.config.mjs": `export default { async headers() { return [{ source: "/(.*)", headers: [
+        { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'nonce-safeNonce123' 'strict-dynamic'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Permissions-Policy", value: "camera=()" },
+        { key: "Strict-Transport-Security", value: "max-age=63072000" },
+      ] }]; } };`,
+    }));
+    expect(result).toEqual({ ok: true, violations: [] });
   });
 
   it("requires each configured response route to carry the complete header set", async () => {

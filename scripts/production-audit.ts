@@ -64,7 +64,10 @@ export async function auditProduction(root = process.cwd(), environment: NodeJS.
     "permissions-policy": (value) => value.length > 0,
     "strict-transport-security": hasProductionHsts,
   };
-  const missing = headerRules.flatMap((headers) => Object.entries(requiredHeaders).filter(([key, accepts]) => !headers.some((header) => header.key.toLowerCase() === key && accepts(header.value))).map(([key]) => key));
+  const missing = headerRules.flatMap((headers) => Object.entries(requiredHeaders).filter(([key, accepts]) => {
+    const matches = headers.filter((header) => header.key.toLowerCase() === key);
+    return matches.length !== 1 || !accepts(matches[0]!.value);
+  }).map(([key]) => key));
   if (headerRules.length === 0 || missing.length > 0) add(violations, "SECURITY_HEADERS", root, await nextConfigPath(root) ?? join(root, "next.config.ts"), `Missing or unsafe response headers: ${unique(missing.length ? missing : Object.keys(requiredHeaders)).join(", ")}.`);
 
   const sorted = violations.sort((left, right) => `${left.ruleId}:${left.path}:${left.message}`.localeCompare(`${right.ruleId}:${right.path}:${right.message}`));
@@ -137,17 +140,22 @@ function isProductionApiEndpoint(value: string | undefined): boolean {
 }
 
 function isProductionContentSecurityPolicy(value: string): boolean {
-  const directives = new Map(value.split(";").map((directive) => directive.trim()).filter(Boolean).map((directive) => {
+  const entries = value.split(";").map((directive) => directive.trim()).filter(Boolean).map((directive) => {
     const [name, ...sources] = directive.split(/\s+/);
     return [name, sources] as const;
-  }));
+  });
+  const securityRelevant = new Set(["default-src", "script-src", "base-uri", "object-src", "frame-ancestors", "form-action"]);
+  if (entries.some(([name], index) => securityRelevant.has(name) && entries.findIndex(([other]) => other === name) !== index)) return false;
+  const directives = new Map(entries);
   const defaultSources = directives.get("default-src") ?? [];
   const scriptSources = directives.get("script-src") ?? [];
-  const weakScriptSource = scriptSources.some((source) => source === "*" || /^(?:https?|data|blob):$/i.test(source) || source === "'unsafe-inline'" || source === "'unsafe-eval'");
+  const scriptAnchor = (source: string) => /^'nonce-[A-Za-z0-9+/=_-]+'$/.test(source) || /^'sha(?:256|384|512)-[A-Za-z0-9+/=_-]+'$/.test(source);
+  const allowedScriptSource = (source: string) => source === "'self'" || source === "'strict-dynamic'" || scriptAnchor(source);
   return defaultSources.length === 1 && defaultSources[0] === "'self'"
     && scriptSources.includes("'self'")
-    && scriptSources.some((source) => source === "'strict-dynamic'" || /^'nonce-[^']+'$/.test(source) || /^'sha(?:256|384|512)-[^']+'$/.test(source))
-    && !weakScriptSource;
+    && scriptSources.includes("'strict-dynamic'")
+    && scriptSources.some(scriptAnchor)
+    && scriptSources.every(allowedScriptSource);
 }
 
 function hasProductionHsts(value: string): boolean {
