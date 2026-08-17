@@ -15,15 +15,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Memory CI", template: "%s · Memory CI" },
-  description: "Pull requests, evaluation, promotion, and rollback for production agent memory.",
-  metadataBase: new URL("https://memory-ci.asaborodaniel.chatgpt.site"),
+  title: { default: "Stash", template: "%s · Stash" },
+  description: "Governed agent-memory releases for production AI systems.",
+  metadataBase: new URL("https://trystash.xyz"),
   openGraph: {
-    title: "Memory CI — ship agent memory like code",
-    description: "Pull requests, behavioral evaluation, atomic promotion, lineage, and rollback for production agent memory.",
-    images: [{ url: "/memory-ci-social.png", width: 1731, height: 909, alt: "A governed agent-memory release path with a quarantined branch" }],
+    title: "Stash — governed agent-memory releases",
+    description: "Propose, evaluate, promote, inspect, and roll back agent memory with production controls.",
+    images: [{ url: "/stash-social.png", width: 1731, height: 909, alt: "Stash governs the release path for production agent memory" }],
   },
-  twitter: { card: "summary_large_image", images: ["/memory-ci-social.png"] },
+  twitter: { card: "summary_large_image", images: ["/stash-social.png"] },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

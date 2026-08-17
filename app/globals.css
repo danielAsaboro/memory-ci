@@ -33,7 +33,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar); background: #191b20; color: #e8e9eb; padding: 18px 14px; display: flex; flex-direction: column; z-index: 30; }
 .brand-row { height: 38px; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; }
 .brand { display: inline-flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
-.brand-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--cobalt); display: grid; place-items: center; color: white; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.brand-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--cobalt); display: grid; place-items: center; color: white; font-size: 14px; font-weight: 760; letter-spacing: -.08em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
 .workspace-switcher { margin: 22px 0 16px; padding: 10px; border: 1px solid #34373e; border-radius: 10px; display: grid; grid-template-columns: 30px 1fr 14px; gap: 9px; align-items: center; background: #22242a; }
 .workspace-avatar { width: 30px; height: 30px; border-radius: 7px; background: #373b45; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
 .workspace-switcher strong, .workspace-switcher small { display: block; }

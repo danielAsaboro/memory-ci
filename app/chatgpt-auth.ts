@@ -45,7 +45,7 @@ export async function requireChatGPTUser(
   const user = await getChatGPTUser();
   if (user) return user;
 
-  redirect(chatGPTSignInPath(returnTo));
+  redirect(chatGPTSignInPath(returnTo) as Parameters<typeof redirect>[0]);
 }
 
 export function chatGPTSignInPath(returnTo: string): string {

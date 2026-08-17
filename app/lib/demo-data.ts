@@ -43,6 +43,6 @@ export const scenarios = [
 export const auditEvents = [
   { action: "memory.promoted", actor: "Amina M.", resource: "refund-review-threshold@v3", time: "8 minutes ago", request: "req_8F2K", provider: "evt_01J" },
   { action: "candidate.approved", actor: "Amina M.", resource: "chg-threshold-150", time: "9 minutes ago", request: "req_8EZX", provider: "aws-eval-482" },
-  { action: "candidate.quarantined", actor: "Memory CI policy", resource: "chg-gift-card-poison", time: "21 minutes ago", request: "req_8AA1", provider: "aws-eval-471" },
+  { action: "candidate.quarantined", actor: "Stash policy", resource: "chg-gift-card-poison", time: "21 minutes ago", request: "req_8AA1", provider: "aws-eval-471" },
   { action: "evaluation.completed", actor: "Bedrock evaluator", resource: "run_019a", time: "22 minutes ago", request: "req_89QK", provider: "brk_72c9" },
 ] as const;

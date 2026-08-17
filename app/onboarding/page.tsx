@@ -11,7 +11,7 @@ export default function OnboardingPage() {
   return <>
     <div className="page-header wide-header">
       <div><span className="eyebrow">First run</span><h1>Make memory deployable.</h1><p>Connect the database, verify AWS, then register one agent. Every green state must have evidence behind it.</p></div>
-      {/* Native navigation avoids a vinext RSC transition race on the first-run route. */}
+      {/* Native navigation avoids an App Router transition race on the first-run route. */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a href="/changes" className="button primary">Open review queue <ArrowRight size={15} /></a>
     </div>
