@@ -23,6 +23,7 @@ const workspace = {
 describe("POST /api/session", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -152,6 +153,34 @@ describe("POST /api/session", () => {
     timeoutCallback?.();
     const response = await responsePromise;
 
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      code: "provider_unavailable",
+      message: "Workspace bootstrap is unavailable.",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("aborts a bootstrap whose response body stalls after headers", async () => {
+    vi.useFakeTimers();
+    const responseBody = new Promise<unknown>(() => {});
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn(() => responseBody),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    let result: Response | undefined;
+    void POST().then((response) => { result = response; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await Promise.resolve();
+
+    expect(result).toBeInstanceOf(Response);
+    const response = result as Response;
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({
       code: "provider_unavailable",

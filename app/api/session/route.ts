@@ -42,9 +42,8 @@ export async function POST(): Promise<Response> {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
-  let bootstrapResponse: Response;
   try {
-    bootstrapResponse = await fetch(`${config.apiBaseUrl}/v1/workspaces`, {
+    const bootstrapResponse = await fetch(`${config.apiBaseUrl}/v1/workspaces`, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -53,33 +52,33 @@ export async function POST(): Promise<Response> {
         "X-Stash-Bootstrap-Key": config.bootstrapKey,
       },
     });
+
+    if (!bootstrapResponse.ok) {
+      return unavailable(502, "Workspace bootstrap is unavailable.");
+    }
+
+    const workspace = await parseWorkspaceBootstrap(bootstrapResponse, controller.signal);
+    if (!workspace) {
+      return unavailable(502, "Workspace bootstrap returned an invalid response.");
+    }
+
+    const token = await signWorkspaceSession(workspace, config.sessionSecret);
+    const response = NextResponse.json(workspace, { status: 201 });
+    response.cookies.set({
+      name: COOKIE_NAME,
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: WORKSPACE_SESSION_MAX_AGE_SECONDS,
+    });
+    return response;
   } catch {
     return unavailable(502, "Workspace bootstrap is unavailable.");
   } finally {
     clearTimeout(timer);
   }
-
-  if (!bootstrapResponse.ok) {
-    return unavailable(502, "Workspace bootstrap is unavailable.");
-  }
-
-  const workspace = await parseWorkspaceBootstrap(bootstrapResponse);
-  if (!workspace) {
-    return unavailable(502, "Workspace bootstrap returned an invalid response.");
-  }
-
-  const token = await signWorkspaceSession(workspace, config.sessionSecret);
-  const response = NextResponse.json(workspace, { status: 201 });
-  response.cookies.set({
-    name: COOKIE_NAME,
-    value: token,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: WORKSPACE_SESSION_MAX_AGE_SECONDS,
-  });
-  return response;
 }
 
 function readSessionConfig(): SessionConfig {
@@ -109,11 +108,28 @@ function requiredHttpUrl(name: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-async function parseWorkspaceBootstrap(response: Response): Promise<WorkspaceMetadata | null> {
+async function parseWorkspaceBootstrap(
+  response: Response,
+  signal: AbortSignal,
+): Promise<WorkspaceMetadata | null> {
   try {
-    return workspaceBootstrapSchema.safeParse(await response.json()).data ?? null;
-  } catch {
+    return workspaceBootstrapSchema.safeParse(await readJsonBeforeAbort(response, signal)).data ?? null;
+  } catch (error) {
+    if (signal.aborted) throw error;
     return null;
+  }
+}
+
+async function readJsonBeforeAbort(response: Response, signal: AbortSignal): Promise<unknown> {
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new Error("Workspace bootstrap timed out."));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([response.json(), aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
 
