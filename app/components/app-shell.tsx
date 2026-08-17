@@ -8,10 +8,11 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { useWorkspace } from "../lib/workspace-provider";
 
 const navigation = [
   { href: "/overview", label: "Overview", icon: Activity },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, count: 3 },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow },
   { href: "/memory", label: "Memory", icon: Database },
   { href: "/evaluations", label: "Evaluations", icon: TestTubeDiagonal },
   { href: "/agents", label: "Agents", icon: Bot },
@@ -21,6 +22,9 @@ const navigation = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { workspace, state } = useWorkspace();
+  const workspaceName = workspace?.workspaceName ?? "Connecting workspace";
+  const initials = workspaceName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "…";
   return (
     <div className="app-frame">
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`} aria-label="Primary navigation">
@@ -32,8 +36,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setOpen(false)}><X size={19} /></button>
         </div>
         <div className="workspace-switcher">
-          <span className="workspace-avatar">NS</span>
-          <span><strong>Northstar Support</strong><small>Production workspace</small></span>
+          <span className="workspace-avatar">{initials}</span>
+          <span><strong>{workspaceName}</strong><small>{state === "ready" ? "Workspace session ready" : state === "error" ? "Workspace unavailable" : "Connecting"}</small></span>
           <ChevronDown size={15} aria-hidden="true" />
         </div>
         <nav className="nav-list">
@@ -42,7 +46,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             const Icon = item.icon;
             return <Link key={item.href} href={item.href as Route} className={active ? "nav-link active" : "nav-link"} aria-current={active ? "page" : undefined} onClick={() => setOpen(false)}>
               <Icon size={17} strokeWidth={1.9} /><span>{item.label}</span>
-              {item.count ? <span className="nav-count">{item.count}</span> : null}
             </Link>;
           })}
         </nav>
@@ -57,7 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={20} /></button>
           <div className="global-search"><Search size={16} aria-hidden="true" /><span>Search memory, changes, agents…</span><kbd>⌘ K</kbd></div>
-          <div className="topbar-actions"><span className="status-chip pending"><span />Runtime status pending</span><span className="avatar">AM</span></div>
+          <div className="topbar-actions"><span className={`status-chip ${state === "ready" ? "good" : "pending"}`}><span />{state === "ready" ? "Workspace connected" : "Runtime status pending"}</span><span className="avatar">{initials}</span></div>
         </header>
         <main className="page-shell">{children}</main>
       </div>

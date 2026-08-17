@@ -1,29 +1,8 @@
 // @vitest-environment jsdom
-
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-
 import { LineageTimeline } from "../components/lineage-timeline";
 import { MemoryExplorer } from "../components/memory-explorer";
-
-describe("memory explorer", () => {
-  it("filters by semantic label while preserving revision and provenance", async () => {
-    const user = userEvent.setup();
-    render(<MemoryExplorer />);
-    await user.type(screen.getByLabelText("Search active memory"), "destination");
-    expect(screen.getByText("Refund destination")).toBeInTheDocument();
-    expect(screen.getByText("Payments control · signed")).toBeInTheDocument();
-    expect(screen.getByText("r9")).toBeInTheDocument();
-    expect(screen.queryByText("High-value escalation")).not.toBeInTheDocument();
-  });
-
-  it("requires confirmation before rollback and announces the selected target", async () => {
-    const user = userEvent.setup();
-    render(<LineageTimeline />);
-    await user.click(screen.getByRole("button", { name: "Roll back to version 2" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Create revision 13 from version 2?");
-    await user.click(screen.getByRole("button", { name: "Confirm rollback" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Rollback requested for version 2");
-  });
-});
+const memory = { id: "11111111-1111-4111-8111-111111111111", namespaceId: "22222222-2222-4222-8222-222222222222", namespaceName: "claims", lineageId: "33333333-3333-4333-8333-333333333333", stableKey: "live-memory", candidateId: "44444444-4444-4444-8444-444444444444", memoryClass: "policy" as const, canonicalText: "Live payload", contentDigest: "digest", version: 5, revision: 37, active: true, reads: 9, validFrom: "2026-08-17T10:00:00.000Z", validUntil: null };
+describe("memory explorer", () => { it("filters live records", async () => { const user = userEvent.setup(); render(<MemoryExplorer memories={[memory]} />); await user.type(screen.getByLabelText("Search active memory"), "live"); expect(screen.getByText("live-memory")).toBeInTheDocument(); }); it("renders returned lineage", () => { render(<LineageTimeline lineage={[memory]} />); expect(screen.getByText("Version 5")).toBeInTheDocument(); }); });

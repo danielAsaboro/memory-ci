@@ -14,8 +14,8 @@ const config = `{
   }
 }`;
 
-export function OnboardingChecklist({ status, onRetry, demoMode = false }: {
-  status: IntegrationStatus; onRetry: (integration: keyof IntegrationStatus) => void; demoMode?: boolean;
+export function OnboardingChecklist({ status, onRetry }: {
+  status: IntegrationStatus; onRetry: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const ready = Object.values(status).filter((item) => item.state === "ready").length;
@@ -29,7 +29,6 @@ export function OnboardingChecklist({ status, onRetry, demoMode = false }: {
       <div><span className="eyebrow">Workspace readiness</span><h2 id="setup-title">Ship governed memory</h2></div>
       <span className={ready === 3 ? "readiness complete" : "readiness"}>{ready === 3 ? "Setup complete" : `${ready} of 3 ready`}</span>
     </div>
-    {demoMode ? <div className="sandbox-banner"><span>Sandbox fixture</span> This guided workspace uses deterministic demo evidence. Cloud proof is labeled separately.</div> : null}
     <ol className="setup-list">
       {items.map(({ id, title, description, icon: Icon }, index) => {
         const item = status[id];
@@ -37,7 +36,7 @@ export function OnboardingChecklist({ status, onRetry, demoMode = false }: {
           <span className={`step-icon ${item.state}`} aria-hidden="true">{item.state === "ready" ? <Check size={17} /> : item.state === "loading" ? <LoaderCircle className="spin" size={17} /> : <Icon size={17} />}</span>
           <div className="step-copy"><span className="step-number">0{index + 1}</span><h3>{title}</h3><p>{description}</p><small>{item.detail}</small></div>
           {item.state === "blocked" ? <span className="state-label danger">Action required</span> : null}
-          {item.state === "unavailable" ? <button className="button subtle" onClick={() => onRetry(id)} aria-label={`Retry ${id === "cockroach" ? "CockroachDB" : id}`}><RefreshCw size={14} /> Retry</button> : null}
+          {item.state === "unavailable" ? <button className="button subtle" onClick={onRetry} aria-label={`Retry ${id === "cockroach" ? "CockroachDB" : id}`}><RefreshCw size={14} /> Retry</button> : null}
         </li>;
       })}
     </ol>

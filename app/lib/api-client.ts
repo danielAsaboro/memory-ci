@@ -1,6 +1,11 @@
 import { z, type ZodType } from "zod";
 
-import { integrationsSchema } from "../../src/contracts/dashboard";
+import {
+  agentSchema, auditEventSchema, candidateSummarySchema, evaluationDetailSchema, evaluationSummarySchema,
+  integrationsSchema, memoryDetailSchema, memorySummarySchema, overviewSchema, workspaceStatusSchema,
+  type Agent, type AuditEvent, type CandidateSummary, type EvaluationDetail, type EvaluationSummary,
+  type MemoryDetail, type MemorySummary, type Overview, type WorkspaceStatus,
+} from "../../src/contracts/dashboard";
 
 export type IntegrationState = "ready" | "pending" | "blocked" | "unavailable" | "loading";
 export type IntegrationStatus = Record<"cockroach" | "aws" | "agent", { state: IntegrationState; detail: string }>;
@@ -45,6 +50,30 @@ export async function getIntegrationStatus(): Promise<{ demoMode: boolean; statu
   const workspace = await stashQuery("/v1/workspace/status", z.object({ integrations: integrationsSchema }).strict());
   return { demoMode: false, status: workspace.integrations };
 }
+
+export const queryKeys = {
+  overview: (workspaceId: string) => ["workspace", workspaceId, "overview"] as const,
+  candidates: (workspaceId: string) => ["workspace", workspaceId, "candidates"] as const,
+  candidate: (workspaceId: string, candidateId: string) => ["workspace", workspaceId, "candidate", candidateId] as const,
+  memories: (workspaceId: string) => ["workspace", workspaceId, "memories"] as const,
+  memory: (workspaceId: string, memoryId: string) => ["workspace", workspaceId, "memory", memoryId] as const,
+  evaluations: (workspaceId: string) => ["workspace", workspaceId, "evaluations"] as const,
+  evaluation: (workspaceId: string, evaluationId: string) => ["workspace", workspaceId, "evaluation", evaluationId] as const,
+  agents: (workspaceId: string) => ["workspace", workspaceId, "agents"] as const,
+  audit: (workspaceId: string) => ["workspace", workspaceId, "audit"] as const,
+  status: (workspaceId: string) => ["workspace", workspaceId, "status"] as const,
+};
+
+export const getOverview = (): Promise<Overview> => stashQuery("/v1/overview", overviewSchema);
+export const getCandidates = (): Promise<CandidateSummary[]> => stashQuery("/v1/candidates", candidateSummarySchema.array());
+export const getCandidate = (id: string): Promise<CandidateSummary> => stashQuery(`/v1/candidates/${id}`, candidateSummarySchema);
+export const getMemories = (): Promise<MemorySummary[]> => stashQuery("/v1/memory", memorySummarySchema.array());
+export const getMemory = (id: string): Promise<MemoryDetail> => stashQuery(`/v1/memory/${id}`, memoryDetailSchema);
+export const getEvaluations = (): Promise<EvaluationSummary[]> => stashQuery("/v1/evaluations", evaluationSummarySchema.array());
+export const getEvaluation = (id: string): Promise<EvaluationDetail> => stashQuery(`/v1/evaluations/${id}`, evaluationDetailSchema);
+export const getAgents = (): Promise<Agent[]> => stashQuery("/v1/agents", agentSchema.array());
+export const getAuditEvents = (): Promise<AuditEvent[]> => stashQuery("/v1/audit", auditEventSchema.array());
+export const getWorkspaceStatus = (): Promise<WorkspaceStatus> => stashQuery("/v1/workspace/status", workspaceStatusSchema);
 
 async function request<T>(path: string, init: RequestInit, schema: ZodType<T>): Promise<T> {
   let response: Response;

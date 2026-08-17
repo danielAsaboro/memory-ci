@@ -1,3 +1,7 @@
+"use client";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { AsyncSkeleton, TerminalError, WorkspaceBoundary } from "../components/async-state";
 import { EvaluationMatrix } from "../components/evaluation-matrix";
-
-export default function EvaluationsPage() { return <><div className="page-header"><div><span className="eyebrow">Behavior gate</span><h1>Evaluations</h1><p>Baseline and virtual-candidate trajectories, deterministic controls first, Bedrock judgment second.</p></div><span className="tag">run_019b · Bedrock receipt attached</span></div><EvaluationMatrix /></>; }
+import { getEvaluation, getEvaluations, queryKeys } from "../lib/api-client";
+export default function EvaluationsPage() { return <WorkspaceBoundary>{(workspaceId) => <Evaluations workspaceId={workspaceId} />}</WorkspaceBoundary>; }
+function Evaluations({ workspaceId }: { workspaceId: string }) { const summaries = useQuery({ queryKey: queryKeys.evaluations(workspaceId), queryFn: getEvaluations }); const details = useQueries({ queries: (summaries.data ?? []).map((evaluation) => ({ queryKey: queryKeys.evaluation(workspaceId, evaluation.id), queryFn: () => getEvaluation(evaluation.id) })) }); if (summaries.isLoading || details.some((query) => query.isLoading)) return <AsyncSkeleton label="Loading evaluation evidence" />; if (summaries.isError) return <TerminalError title="Evaluation data is unavailable" error={summaries.error} onRetry={() => summaries.refetch()} />; const failed = details.find((query) => query.isError); if (failed) return <TerminalError title="Evaluation evidence is unavailable" error={failed.error} onRetry={() => failed.refetch()} />; return <><div className="page-header"><div><span className="eyebrow">Behavior gate</span><h1>Evaluations</h1><p>Scenario outcomes and provider receipts are shown for completed live runs.</p></div></div><EvaluationMatrix evaluations={details.flatMap((query) => query.data ? [query.data] : [])} /></>; }

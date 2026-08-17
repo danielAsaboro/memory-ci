@@ -32,13 +32,12 @@ describe("OnboardingChecklist", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Configuration copied");
   });
 
-  it("identifies fixture data as sandbox-only", () => {
-    render(<OnboardingChecklist demoMode status={{
+  it("reports ready provider evidence", () => {
+    render(<OnboardingChecklist status={{
       cockroach: { state: "ready", detail: "Local CockroachDB" },
       aws: { state: "ready", detail: "Recorded adapter fixture" },
       agent: { state: "ready", detail: "Demo agent" },
     }} onRetry={() => undefined} />);
-    expect(screen.getByText(/sandbox fixture/i)).toBeInTheDocument();
     expect(screen.getByText("Setup complete")).toBeInTheDocument();
   });
 });

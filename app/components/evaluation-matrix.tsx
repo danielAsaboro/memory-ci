@@ -1,15 +1,18 @@
-import { Check, GitCompareArrows } from "lucide-react";
+import { Check, CircleAlert } from "lucide-react";
 
-import { scenarios } from "../lib/demo-data";
+import type { EvaluationDetail } from "../../src/contracts/dashboard";
+import { EmptyState } from "./async-state";
 
-export function EvaluationMatrix() {
+export function EvaluationMatrix({ evaluations }: { evaluations: EvaluationDetail[] }) {
+  const results = evaluations.flatMap((evaluation) => evaluation.results.map((result) => ({ evaluation, result })));
   return <section className="panel">
-    <div className="panel-heading"><div><span className="eyebrow">Counterfactual suite</span><h2>Scenario matrix</h2></div><span className="readiness complete">5 / 5 conclusive</span></div>
+    <div className="panel-heading"><div><span className="eyebrow">Counterfactual suite</span><h2>Scenario matrix</h2></div><span className={results.some(({ result }) => result.status === "failed" || result.status === "regressed") ? "readiness" : "readiness complete"}>{results.length} result{results.length === 1 ? "" : "s"}</span></div>
     {/* A horizontally scrollable data region must be keyboard focusable. */}
     {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
     <div className="evaluation-table" tabIndex={0} aria-label="Evaluation scenarios; scroll horizontally for all columns">
-      <div className="evaluation-row evaluation-header"><span>Scenario</span><span>Baseline r11</span><span>Candidate</span><span>Result</span><span>Latency</span></div>
-      {scenarios.map((scenario) => <div className="evaluation-row" key={scenario.name}><span><strong>{scenario.name}</strong></span><span>{scenario.baseline}</span><span>{scenario.candidate}</span><span className={scenario.status === "changed" ? "expected-delta" : "passed-cell"}>{scenario.status === "changed" ? <GitCompareArrows size={13} /> : <Check size={13} />}{scenario.status === "changed" ? "Expected delta" : "Passed"}</span><span>{scenario.duration}</span></div>)}
+      <div className="evaluation-row evaluation-header"><span>Scenario</span><span>Baseline</span><span>Candidate</span><span>Result</span><span>Provider receipt</span></div>
+      {results.map(({ evaluation, result }) => <div className="evaluation-row" key={result.id}><span><strong>{result.scenarioName}</strong></span><span>r{evaluation.baselineRevision}</span><span><code>{evaluation.candidateId}</code></span><span className={result.status === "passed" ? "passed-cell" : "expected-delta"}>{result.status === "passed" ? <Check size={13} /> : <CircleAlert size={13} />}{result.status}</span><span>{result.providerRequestId ?? "No provider receipt"}</span></div>)}
+      {!results.length ? <EmptyState title="No evaluation runs are available" detail="Run results will appear after the provider returns a receipt." /> : null}
     </div>
   </section>;
 }

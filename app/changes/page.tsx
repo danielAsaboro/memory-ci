@@ -1,3 +1,7 @@
+"use client";
+import { useQuery } from "@tanstack/react-query";
+import { AsyncSkeleton, TerminalError, WorkspaceBoundary } from "../components/async-state";
 import { ChangeQueue } from "../components/change-queue";
-
-export default function ChangesPage() { return <><div className="page-header"><div><span className="eyebrow">Release queue</span><h1>Memory changes</h1><p>Review provenance, semantic impact, and counterfactual behavior before activation.</p></div><button className="button secondary">Propose memory</button></div><ChangeQueue /></>; }
+import { getCandidates, queryKeys } from "../lib/api-client";
+export default function ChangesPage() { return <WorkspaceBoundary>{(workspaceId) => <Changes workspaceId={workspaceId} />}</WorkspaceBoundary>; }
+function Changes({ workspaceId }: { workspaceId: string }) { const query = useQuery({ queryKey: queryKeys.candidates(workspaceId), queryFn: getCandidates }); if (query.isError) return <TerminalError title="Candidate queue is unavailable" error={query.error} onRetry={() => query.refetch()} />; if (query.isLoading || !query.data) return <AsyncSkeleton label="Loading candidate queue" />; return <><div className="page-header"><div><span className="eyebrow">Release queue</span><h1>Memory changes</h1><p>Review provider-backed provenance and evaluation evidence before activation.</p></div><button className="button secondary" disabled title="Candidate submission will be available with lifecycle operations">Propose memory</button></div><ChangeQueue candidates={query.data} /></>; }
