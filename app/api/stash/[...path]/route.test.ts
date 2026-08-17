@@ -20,6 +20,10 @@ const session = {
   workspaceName: "Northstar",
 };
 const routeContext = (path: string[]) => ({ params: Promise.resolve({ path }) });
+const overview = {
+  workspace: { id: "11111111-1111-4111-8111-111111111111", name: "Northstar" },
+  metrics: { agents: 1, activeMemories: 2, candidates: 3, evaluations: 4, auditEvents: 5 },
+};
 
 describe("/api/stash/[...path]", () => {
   beforeEach(() => {
@@ -47,10 +51,24 @@ describe("/api/stash/[...path]", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each(["invalid", "expired"])("rejects an %s workspace session before contacting Stash", async (kind) => {
+    const token = kind === "expired"
+      ? await signWorkspaceSession(session, sessionSecret, new Date(Date.now() - 172_800_000))
+      : "not-a-session";
+    cookieStore.get.mockReturnValue({ value: token });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("forwards only allowlisted request headers with a server-side bearer token and request ID", async () => {
     const token = await signWorkspaceSession(session, sessionSecret);
     cookieStore.get.mockReturnValue({ value: token });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ workspace: "safe", apiToken: "must-not-reach-browser" }), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(overview), {
       headers: {
         "content-type": "application/json",
         "x-request-id": "upstream-request-id",
@@ -75,17 +93,79 @@ describe("/api/stash/[...path]", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-forwarded-for");
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(response.headers.get("x-request-id")).toBe("upstream-request-id");
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-upstream-secret")).toBeNull();
-    await expect(response.json()).resolves.toEqual({ workspace: "safe" });
+    await expect(response.json()).resolves.toEqual(overview);
+  });
+
+  it("rejects an upstream success response with extra secret-bearing fields", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...overview, apiToken: "must-not-reach-browser" }), {
+      headers: { "content-type": "application/json" },
+    })));
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ code: "provider_unavailable" });
+  });
+
+  it("maps structured upstream errors to fixed safe messages", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "unauthorized", message: "raw upstream secret: token", requestId: "upstream-request-1", apiToken: "secret",
+    }), { status: 401, headers: { location: "https://attacker.test", "x-request-id": "upstream-request-1" } })));
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      code: "unauthorized", message: "Authentication is required.", requestId: "upstream-request-1",
+    });
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it.each([
+    ["wrong method", POST, ["v1", "overview"], "https://console.stash.test/api/stash/v1/overview"],
+    ["unknown route", GET, ["v1", "unknown"], "https://console.stash.test/api/stash/v1/unknown"],
+    ["encoded traversal", GET, ["v1", "memory", "%2e%2e"], "https://console.stash.test/api/stash/v1/memory/%252e%252e"],
+    ["double encoding", GET, ["v1", "memory", "%252fprivate"], "https://console.stash.test/api/stash/v1/memory/%25252fprivate"],
+  ])("rejects %s before forwarding", async (_label, handler, path, url) => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const request = new Request(url, handler === POST ? { method: "POST", headers: { origin: "https://console.stash.test" }, body: "{}" } : undefined);
+
+    const response = await handler(request, routeContext(path));
+
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not follow or expose upstream redirects", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 302, headers: { location: "https://attacker.test" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
+
+    expect(response.status).toBe(502);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("requires a same-origin mutation and preserves its idempotency key", async () => {
     const token = await signWorkspaceSession(session, sessionSecret);
     cookieStore.get.mockReturnValue({ value: token });
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { headers: { "content-type": "application/json" } }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "11111111-1111-4111-8111-111111111111", state: "proposed", contentDigest: "a".repeat(64), provenanceVerified: true, redactions: [],
+    }), { headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    const request = new Request("https://console.stash.test/api/stash/v1/candidates/candidate-1/screen", {
+    const request = new Request("https://console.stash.test/api/stash/v1/candidates", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -95,10 +175,10 @@ describe("/api/stash/[...path]", () => {
       body: "{}",
     });
 
-    const response = await POST(request, routeContext(["v1", "candidates", "candidate-1", "screen"]));
+    const response = await POST(request, routeContext(["v1", "candidates"]));
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith("https://api.stash.test/v1/candidates/candidate-1/screen", expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("https://api.stash.test/v1/candidates", expect.objectContaining({
       method: "POST",
       body: "{}",
       headers: expect.objectContaining({ "content-type": "application/json", "idempotency-key": "write-123" }),
@@ -177,6 +257,30 @@ describe("/api/stash/[...path]", () => {
     const responsePromise = GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
     await started;
     expect(timeoutCallback).toBeTypeOf("function");
+    timeoutCallback?.();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ code: "provider_unavailable" });
+  });
+
+  it("times out while awaiting the upstream fetch", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    let timeoutCallback: (() => void) | undefined;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+      if (delay === 10_000) timeoutCallback = callback as () => void;
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    });
+    let fetchStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { fetchStarted = resolve; });
+    vi.stubGlobal("fetch", vi.fn(() => {
+      fetchStarted?.();
+      return new Promise<Response>(() => {});
+    }));
+
+    const responsePromise = GET(new Request("https://console.stash.test/api/stash/v1/overview"), routeContext(["v1", "overview"]));
+    await started;
     timeoutCallback?.();
     const response = await responsePromise;
 

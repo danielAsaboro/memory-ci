@@ -47,8 +47,19 @@ export async function getIntegrationStatus(): Promise<{ demoMode: boolean; statu
 }
 
 async function request<T>(path: string, init: RequestInit, schema: ZodType<T>): Promise<T> {
-  const response = await fetch(gatewayPath(path), init);
-  const body = await response.text();
+  let response: Response;
+  let body: string;
+  try {
+    response = await fetch(gatewayPath(path), init);
+    body = await response.text();
+  } catch {
+    throw new StashApiError({
+      code: "transport_error",
+      message: "The Stash request could not be completed.",
+      requestId: "unknown",
+      status: 0,
+    });
+  }
   if (!response.ok) throw parseError(response, body);
   const result = schema.safeParse(parseJson(body));
   if (!result.success) {

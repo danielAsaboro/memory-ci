@@ -15,15 +15,39 @@ function WorkspaceState() {
 describe("WorkspaceProvider", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("settles as ready after React replays its effect without creating a second workspace", async () => {
+  it("settles as ready after React replays its effect and invalidates once for a newly created workspace", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       tenantId: "tenant-1", principalId: "principal-1", roles: ["admin"], workspaceName: "Northstar",
     }), { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<StrictMode><QueryClientProvider client={new QueryClient()}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider></StrictMode>);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    render(<StrictMode><QueryClientProvider client={client}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider></StrictMode>);
 
     expect(await screen.findByText("ready")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(invalidate).toHaveBeenCalledOnce();
+  });
+
+  it("does not invalidate queries when an existing workspace session is reused", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      tenantId: "tenant-1", principalId: "principal-1", roles: ["admin"], workspaceName: "Northstar",
+    }), { status: 200 })));
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<QueryClientProvider client={client}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider>);
+
+    expect(await screen.findByText("ready")).toBeInTheDocument();
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("exposes an error state when the session endpoint is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 502 })));
+
+    render(<QueryClientProvider client={new QueryClient()}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider>);
+
+    expect(await screen.findByText("error")).toBeInTheDocument();
   });
 });
