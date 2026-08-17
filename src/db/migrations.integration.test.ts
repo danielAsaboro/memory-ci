@@ -192,9 +192,9 @@ describe("CockroachDB migrations", () => {
     await admin.query(`CREATE DATABASE ${upgradeName}`);
     const upgrade = new Client({ connectionString: upgradeUrl.toString() });
     try {
-      await migrateThrough(upgradeUrl.toString(), "009_source_signature_evidence.sql");
+      await migrateThrough(upgradeUrl.toString(), "010_trusted_source_signature_evidence.sql");
       await upgrade.connect();
-      const tenantId = randomUUID(); const principalId = randomUUID(); const namespaceId = randomUUID(); const sourceId = randomUUID(); const candidateId = randomUUID();
+      const tenantId = randomUUID(); const principalId = randomUUID(); const namespaceId = randomUUID(); const sourceId = randomUUID(); const candidateId = randomUUID(); const nullAlgorithmSourceId = randomUUID(); const nullAlgorithmCandidateId = randomUUID();
       await upgrade.query("INSERT INTO tenants (id,slug,name) VALUES ($1,$2,'Legacy signature')", [tenantId, `legacy-${tenantId}`]);
       await upgrade.query("INSERT INTO principals (tenant_id,id,kind,display_name) VALUES ($1,$2,'human','Owner')", [tenantId, principalId]);
       await upgrade.query("INSERT INTO agent_namespaces (tenant_id,id,slug,name) VALUES ($1,$2,'policy','Policy')", [tenantId, namespaceId]);
@@ -202,9 +202,15 @@ describe("CockroachDB migrations", () => {
         VALUES ($1,$2,'operator','authoritative','legacy-digest','legacy-owner',true,$3)`, [tenantId, sourceId, principalId]);
       await upgrade.query(`INSERT INTO memory_candidates (tenant_id,id,namespace_id,state,memory_class,trust_class,canonical_payload,content_digest,source_id,created_by)
         VALUES ($1,$2,$3,'proposed','policy','authoritative','{}','legacy-candidate',$4,$5)`, [tenantId, candidateId, namespaceId, sourceId, principalId]);
+      await upgrade.query(`INSERT INTO sources (tenant_id,id,source_type,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_public_key,signature_registry_version,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,submitted_by)
+        VALUES ($1,$2,'operator','authoritative','complete-except-algorithm','owner','v1','fingerprint','public-key','registry-v1',NULL,'signature','{"version":1}',1,true,$3)`, [tenantId, nullAlgorithmSourceId, principalId]);
+      await upgrade.query(`INSERT INTO memory_candidates (tenant_id,id,namespace_id,state,memory_class,trust_class,canonical_payload,content_digest,source_id,created_by)
+        VALUES ($1,$2,$3,'proposed','policy','authoritative','{}','null-algorithm-candidate',$4,$5)`, [tenantId, nullAlgorithmCandidateId, namespaceId, nullAlgorithmSourceId, principalId]);
       await migrate(upgradeUrl.toString());
       await expect(upgrade.query("SELECT trust_class,signature_verified FROM sources WHERE tenant_id=$1 AND id=$2", [tenantId, sourceId])).resolves.toMatchObject({ rows: [{ trust_class: "observed", signature_verified: false }] });
       await expect(upgrade.query("SELECT trust_class FROM memory_candidates WHERE tenant_id=$1 AND id=$2", [tenantId, candidateId])).resolves.toMatchObject({ rows: [{ trust_class: "observed" }] });
+      await expect(upgrade.query("SELECT trust_class,signature_verified FROM sources WHERE tenant_id=$1 AND id=$2", [tenantId, nullAlgorithmSourceId])).resolves.toMatchObject({ rows: [{ trust_class: "observed", signature_verified: false }] });
+      await expect(upgrade.query("SELECT trust_class FROM memory_candidates WHERE tenant_id=$1 AND id=$2", [tenantId, nullAlgorithmCandidateId])).resolves.toMatchObject({ rows: [{ trust_class: "observed" }] });
     } finally { await upgrade.end().catch(() => undefined); await admin.query(`DROP DATABASE ${upgradeName} CASCADE`); }
   });
 
