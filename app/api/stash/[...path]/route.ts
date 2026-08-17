@@ -4,9 +4,10 @@ import { z, type ZodType } from "zod";
 import { verifyWorkspaceSession } from "../../../../src/auth/workspace-session";
 import {
   agentSchema, auditEventSchema, candidateStateSchema, candidateSummarySchema, evaluationDetailSchema,
-  evaluationSummarySchema, identifierSchema, memoryClassSchema, memoryDetailSchema, memorySummarySchema,
+  evaluationStatusSchema, evaluationSummarySchema, identifierSchema, memoryClassSchema, memoryDetailSchema, memorySummarySchema,
   nullableTimestampSchema, overviewSchema, timestampSchema, trustClassSchema, workspaceStatusSchema,
 } from "../../../../src/contracts/dashboard";
+import { relationTypes } from "../../../../src/domain/relations";
 
 const COOKIE_NAME = "stash_session";
 const MAX_BODY_BYTES = 64 * 1024;
@@ -19,6 +20,13 @@ const internalCandidateSchema = z.object({
   state: candidateStateSchema, memoryClass: memoryClassSchema, trustClass: trustClassSchema,
   canonicalPayload: z.record(z.string(), z.unknown()), contentDigest: z.string().min(1).max(128),
   sourceId: identifierSchema, createdBy: identifierSchema, createdAt: timestampSchema,
+}).strict();
+const candidateDetailProviderSchema = z.object({
+  id: identifierSchema, namespaceId: identifierSchema, namespaceName: z.string().min(1).max(255), lineageId: identifierSchema.nullable(),
+  state: candidateStateSchema, memoryClass: memoryClassSchema, trustClass: trustClassSchema, canonicalText: z.string().max(50_000),
+  contentDigest: z.string().min(1).max(128), source: z.object({ id: identifierSchema, uri: z.string().max(2_000).nullable(), signatureVerified: z.boolean() }).strict(),
+  author: z.object({ id: identifierSchema, name: z.string().min(1).max(255) }).strict(), findingCount: z.number().int().nonnegative(),
+  blockingFindingCount: z.number().int().nonnegative(), createdAt: timestampSchema, updatedAt: timestampSchema,
 }).strict();
 const internalMemorySchema = z.object({
   id: identifierSchema, tenantId: identifierSchema, namespaceId: identifierSchema, lineageId: identifierSchema,
@@ -50,13 +58,13 @@ const memorySearchSchema = z.object({
 const explanationSchema = z.object({
   memoryVersionId: identifierSchema, contentDigest: z.string().min(1).max(128),
   provenance: z.object({
-    sourceType: z.string().min(1).max(255), sourceUri: z.string().max(2_000).nullable(), trustClass: z.string().min(1).max(255),
+    sourceType: z.enum(["message", "document", "tool", "api", "operator", "system"]), sourceUri: z.string().max(2_000).nullable(), trustClass: trustClassSchema,
     signatureIdentity: z.string().max(500).nullable(), signatureVerified: z.boolean(),
   }).strict(),
-  review: z.object({ decision: z.string().min(1).max(255), reason: z.string().min(1).max(2_000), reviewerId: identifierSchema }).strict().nullable(),
-  evaluation: z.object({ status: z.string().min(1).max(255), modelId: z.string().max(255).nullable(), providerRequestId: z.string().max(255).nullable(), policyVersion: z.string().min(1).max(255) }).strict().nullable(),
-  activation: z.object({ eventType: z.string().min(1).max(255), revision: z.number().int().nonnegative(), reason: z.string().min(1).max(2_000) }).strict().nullable(),
-  relations: z.array(z.object({ relationType: z.string().min(1).max(255), confidence: z.number().min(0).max(1), evidence: z.record(z.string(), z.unknown()) }).strict()),
+  review: z.object({ decision: z.enum(["approved", "rejected", "quarantined"]), reason: z.string().min(1).max(2_000), reviewerId: identifierSchema }).strict().nullable(),
+  evaluation: z.object({ status: evaluationStatusSchema, modelId: z.string().max(255).nullable(), providerRequestId: z.string().max(255).nullable(), policyVersion: z.string().min(1).max(255) }).strict().nullable(),
+  activation: z.object({ eventType: z.enum(["promoted", "superseded", "rolled_back"]), revision: z.number().int().nonnegative(), reason: z.string().min(1).max(2_000) }).strict().nullable(),
+  relations: z.array(z.object({ relationType: z.enum(relationTypes), confidence: z.number().min(0).max(1), evidence: z.record(z.string(), z.unknown()) }).strict()),
 }).strict();
 const namespaceRevisionSchema = z.object({ namespaceId: identifierSchema, revision: z.number().int().nonnegative() }).strict();
 
@@ -83,6 +91,15 @@ const projectReview = (value: unknown) => {
   return { id: review.id, candidateId: review.candidateId, decision: review.decision, evaluationRunId: review.evaluationRunId, baselineRevision: review.baselineRevision, policyVersion: review.policyVersion };
 };
 const projectMemory = (value: unknown) => publicMemory(internalMemorySchema.parse(value));
+const projectCandidateDetail = (value: unknown) => {
+  const candidate = candidateDetailProviderSchema.parse(value);
+  return {
+    id: candidate.id, namespaceId: candidate.namespaceId, namespaceName: candidate.namespaceName, lineageId: candidate.lineageId,
+    state: candidate.state, memoryClass: candidate.memoryClass, trustClass: candidate.trustClass, canonicalText: candidate.canonicalText,
+    contentDigest: candidate.contentDigest, source: candidate.source, author: candidate.author, findingCount: candidate.findingCount,
+    blockingFindingCount: candidate.blockingFindingCount, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt,
+  };
+};
 const projectMemorySearch = (value: unknown) => {
   const result = memorySearchSchema.parse(value);
   return { namespaceId: result.namespaceId, revision: result.revision, memories: result.memories.map(publicMemory) };
@@ -106,7 +123,7 @@ const routes: readonly RouteDefinition[] = [
   { method: "GET", segments: ["v1", "memory", "id"], schema: memoryDetailSchema, project: identity },
   { method: "POST", segments: ["v1", "candidates"], schema: candidateReceiptSchema, project: identity },
   { method: "GET", segments: ["v1", "candidates"], schema: z.array(candidateSummarySchema), project: identity },
-  { method: "GET", segments: ["v1", "candidates", "id"], schema: candidateSummarySchema, project: identity },
+  { method: "GET", segments: ["v1", "candidates", "id"], schema: candidateDetailProviderSchema, project: projectCandidateDetail },
   { method: "POST", segments: ["v1", "candidates", "id", "screen"], schema: screenResponseSchema, project: projectScreen },
   { method: "POST", segments: ["v1", "candidates", "id", "evaluate"], schema: evaluationQueuedSchema, project: identity },
   { method: "POST", segments: ["v1", "candidates", "id", "reviews"], schema: internalReviewSchema, project: projectReview },

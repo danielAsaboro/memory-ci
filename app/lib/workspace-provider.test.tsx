@@ -15,6 +15,14 @@ function WorkspaceState() {
 describe("WorkspaceProvider", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("exposes loading before the initial workspace bootstrap settles", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+
+    render(<QueryClientProvider client={new QueryClient()}><WorkspaceProvider><WorkspaceState /></WorkspaceProvider></QueryClientProvider>);
+
+    expect(screen.getByText("loading")).toBeInTheDocument();
+  });
+
   it("settles as ready after React replays its effect and invalidates once for a newly created workspace", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       tenantId: "tenant-1", principalId: "principal-1", roles: ["admin"], workspaceName: "Northstar",
