@@ -157,3 +157,8 @@ Deploy the R3 SAM update before collecting evidence so the EventBridge observati
 
 - Escaped credential-value redaction is implemented and covered by adversarial quoted/escaped JSON tests.
 - Authoritative CockroachDB `SHOW JOBS` readiness correlation remains outstanding: current vector proof checks `SHOW COLUMNS`, `SHOW INDEX`, exact vector DDL, and `EXPLAIN`, but does not yet bind a matching vector-index creation job and `succeeded` state. This is a real pre-deployment hardening gap and must be completed before treating vector evidence as final production proof.
+
+## Vector readiness follow-up
+
+- Closed the `SHOW JOBS` readiness gap. Production vector evidence now queries the retained matching `memory_versions_embedding_idx` job, requires the latest exact table/index description to be `succeeded` with a finished timestamp, and records job ID/status/time in the strict receipt. Running, paused, failed, canceled, reverting, absent, and mismatched jobs fail closed with an instruction to rerun/repair the index migration.
+- Focused vector/schema tests, typecheck, lint, and diff check passed. Full gates should be rerun after this final follow-up before deployment.
