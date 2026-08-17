@@ -42,4 +42,6 @@ yarn-error.log*
 /.sam-cli/
 /outputs/
 /work/
+/.worktrees/
+/.superpowers/
 *.tsbuildinfo
