@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .aws-sam --ignore-pattern .sam-cli",
     "typecheck": "tsc --noEmit",
+    "production:audit": "tsx scripts/production-audit.ts",
     "db:generate": "drizzle-kit generate",
     "infra:validate": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 sam validate --lint --template-file infra/template.yaml",
     "infra:build": "__SAM_CLI_APP_DIR=.sam-cli SAM_CLI_TELEMETRY=0 npm_config_cache=/private/tmp/memory-ci-npm-cache sam build --template-file infra/template.yaml",

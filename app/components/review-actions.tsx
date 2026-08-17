@@ -27,7 +27,7 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
   const [reason, setReason] = useState(""); const [stableKey, setStableKey] = useState(""); const [notice, setNotice] = useState<string | null>(null);
   const authoritativeEvaluationId = candidate.latestEvaluationId ?? evaluation?.id ?? null;
   const authoritativeEvaluation = evaluation?.id === authoritativeEvaluationId ? evaluation : null;
-  const [polled, setPolled] = useState<EvaluationSummary | null>(null); const [evaluationId, setEvaluationId] = useState<string | null>(null); const [evaluationRequestBaseline, setEvaluationRequestBaseline] = useState<{ id: string | null } | null>(null);
+  const [polled, setPolled] = useState<EvaluationSummary | null>(null); const [evaluationId, setEvaluationId] = useState<string | null>(null); const [evaluationRequestBaseline, setEvaluationRequestBaseline] = useState<{ knownIds: readonly string[] } | null>(null);
   const [submittedReviewId, setSubmittedReviewId] = useState<string | null>(null); const [staleReviewId, setStaleReviewId] = useState<string | null>(null);
   const screenKey = useRef<string | null>(null); const evaluateKey = useRef<string | null>(null); const reviewKey = useRef<string | null>(null); const promoteKey = useRef<string | null>(null);
   const reviewFingerprint = useRef<string | null>(null); const promoteFingerprint = useRef<string | null>(null);
@@ -43,14 +43,19 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
     client.refetchQueries({ queryKey: queryKeys.candidate(scopedWorkspace, candidate.id), type: "active" }),
     client.refetchQueries({ queryKey: queryKeys.evaluations(scopedWorkspace), type: "active" }),
   ]); }, [candidate.id, candidate.namespaceId, client, scopedWorkspace]);
-  const awaitingNewEvaluation = evaluationRequestBaseline !== null && evaluationRequestBaseline.id === authoritativeEvaluationId;
+  const awaitingNewEvaluation = evaluationRequestBaseline !== null && (!authoritativeEvaluationId || evaluationRequestBaseline.knownIds.includes(authoritativeEvaluationId));
   const effectiveEvaluationId = awaitingNewEvaluation ? evaluationId : authoritativeEvaluationId ?? evaluationId;
   const currentEvidence = awaitingNewEvaluation ? (polled?.id === effectiveEvaluationId ? polled : null) : authoritativeEvaluation ?? (polled?.id === effectiveEvaluationId ? polled : null);
   const currentEvidenceStatus = currentEvidence?.status;
   const reviewId = candidate.latestApprovedReviewId && candidate.latestApprovedReviewId !== staleReviewId ? candidate.latestApprovedReviewId : submittedReviewId;
   const blocked = Boolean(forcedBlocked) || candidate.state === "quarantined" || candidate.blockingFindingCount > 0 || !currentEvidence || currentEvidence.status !== "passed" || !currentEvidence.completedAt;
   const screen = useMutation({ mutationFn: () => screenCandidate(candidate.id, idempotencyKey(screenKey)), onSuccess: async (receipt) => { setNotice(`Screened ${receipt.candidateId}: ${receipt.state}.`); await invalidate(); }, onError: (error) => setNotice(errorNotice(error, "Screening is unavailable.")) });
-  const evaluate = useMutation({ mutationFn: () => { pollDeadline.current = { candidateId: candidate.id, evaluationId: null, deadline: Date.now() + 90_000 }; return requestEvaluation(candidate.id, idempotencyKey(evaluateKey)); }, onSuccess: () => { setEvaluationRequestBaseline({ id: authoritativeEvaluationId }); setEvaluationId(null); setPolled(null); setNotice("Evaluation queued. Waiting for evidence receipt."); void invalidate(); }, onError: (error) => { pollDeadline.current = null; setNotice(errorNotice(error, "Evaluation is unavailable.")); } });
+  const evaluate = useMutation({ mutationFn: async () => {
+    const knownEvaluations = await getEvaluations();
+    pollDeadline.current = { candidateId: candidate.id, evaluationId: null, deadline: Date.now() + 90_000 };
+    await requestEvaluation(candidate.id, idempotencyKey(evaluateKey));
+    return { knownIds: knownEvaluations.filter((item) => item.candidateId === candidate.id).map((item) => item.id) };
+  }, onSuccess: (baseline) => { setEvaluationRequestBaseline(baseline); setEvaluationId(null); setPolled(null); setNotice("Evaluation queued. Waiting for evidence receipt."); void invalidate(); }, onError: (error) => { pollDeadline.current = null; setNotice(errorNotice(error, "Evaluation is unavailable.")); } });
   const recoverStaleReview = () => { setSubmittedReviewId(null); setStaleReviewId(candidate.latestApprovedReviewId); reviewKey.current = null; promoteKey.current = null; setNotice("The review evidence is stale. Request a new review after evidence refreshes."); void invalidate(true); };
   const review = useMutation({ mutationFn: (decision: "approved" | "rejected" | "quarantined") => { const input = { evaluationRunId: effectiveEvaluationId ?? currentEvidence!.id, decision, reason }; return submitReview(candidate.id, input, keyedFor(reviewKey, reviewFingerprint, retryFingerprint(input))); }, onSuccess: async (receipt) => { setSubmittedReviewId(receipt.reviewId); setStaleReviewId(null); setNotice(`Review ${receipt.decision}; request ${receipt.reviewId}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Review is unavailable.")); } });
   const promote = useMutation({ mutationFn: () => { const input = { reviewId: reviewId!, stableKey, reason }; return promoteCandidate(candidate.id, input, keyedFor(promoteKey, promoteFingerprint, retryFingerprint(input))); }, onSuccess: async (receipt) => { setNotice(`Active memory revision ${receipt.revision}; version ${receipt.version}.`); await invalidate(); }, onError: (error) => { if (error instanceof StashApiError && error.code === "stale_review") recoverStaleReview(); else setNotice(errorNotice(error, "Promotion is unavailable.")); } });
@@ -85,13 +90,13 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
     const schedule = (wait: number) => { const nextRemaining = deadline - Date.now(); if (nextRemaining <= 0) { expire(); return; } timer = setTimeout(poll, Math.min(wait, nextRemaining)); };
     const poll = async () => { try {
       if (Date.now() >= deadline) { expire(); return; }
-      if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id && item.id !== evaluationRequestBaseline?.id).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
+      if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).filter((item) => item.candidateId === candidate.id && !evaluationRequestBaseline?.knownIds.includes(item.id)).sort((left, right) => `${right.completedAt ?? right.startedAt ?? ""}:${right.id}`.localeCompare(`${left.completedAt ?? left.startedAt ?? ""}:${left.id}`))[0]; if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
       const result = await getEvaluation(effectiveEvaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
       if (terminal.has(result.status)) { setEvaluationRequestBaseline(null); setNotice(`Evaluation ${result.status}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
       schedule(delays[attempt++] ?? 5_000);
     } catch (error) { if (active && !controller.signal.aborted) { if (pollDeadline.current === activeDeadline) pollDeadline.current = null; settle(); setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } } };
     schedule(delays[attempt++] ?? 1_000); return settle;
-  }, [candidate.id, candidate.state, currentEvidenceStatus, effectiveEvaluationId, evaluate.isSuccess, evaluationRequestBaseline?.id, invalidate]);
+  }, [candidate.id, candidate.state, currentEvidenceStatus, effectiveEvaluationId, evaluate.isSuccess, evaluationRequestBaseline?.knownIds, invalidate]);
   const evaluationPropIsAuthoritative = candidate.latestEvaluationId ? evaluation?.id === candidate.latestEvaluationId : !evaluation;
   const runAvailable = candidate.state === "evaluating" && evaluationPropIsAuthoritative && !evaluate.isPending && !evaluate.isSuccess && !["pending", "running"].includes(currentEvidence?.status ?? "");
   const canReview = candidate.state === "review_required" && Boolean(currentEvidence);

@@ -133,14 +133,16 @@ describe("ReviewActions", () => {
       providerRequestId: null,
       resultCount: 0,
     };
+    let evaluationListRequests = 0;
     const fetchMock = vi.fn((path: string) => {
       if (path.endsWith(`/candidates/${candidate.id}/evaluate`)) {
         return Promise.resolve(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId: "99999999-9999-4999-8999-999999999999" }), { headers: { "content-type": "application/json" } }));
       }
       if (path.endsWith("/evaluations")) {
+        evaluationListRequests += 1;
         return Promise.resolve(new Response(JSON.stringify([
           { ...evaluation, completedAt: "2026-08-17T10:03:00.000Z" },
-          nextEvaluation,
+          ...(evaluationListRequests === 1 ? [] : [nextEvaluation]),
         ]), { headers: { "content-type": "application/json" } }));
       }
       return new Promise<Response>(() => undefined);
@@ -160,6 +162,39 @@ describe("ReviewActions", () => {
     );
     expect(fetchMock).not.toHaveBeenCalledWith(
       `/api/stash/v1/evaluations/${evaluation.id}`,
+      expect.anything(),
+    );
+  });
+
+  it("does not bind any historical evaluation while a newly requested evaluation is absent", async () => {
+    vi.useFakeTimers();
+    const historicalEvaluation = {
+      ...evaluation,
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "passed" as const,
+      startedAt: "2026-08-17T10:01:30.000Z",
+      completedAt: "2026-08-17T10:02:30.000Z",
+      providerRequestId: "provider-run-older",
+    };
+    const fetchMock = vi.fn((path: string) => {
+      if (path.endsWith(`/candidates/${candidate.id}/evaluate`)) {
+        return Promise.resolve(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId: "99999999-9999-4999-8999-999999999999" }), { headers: { "content-type": "application/json" } }));
+      }
+      if (path.endsWith("/evaluations")) {
+        return Promise.resolve(new Response(JSON.stringify([evaluation, historicalEvaluation]), { headers: { "content-type": "application/json" } }));
+      }
+      return new Promise<Response>(() => undefined);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderActions({ candidate: { ...candidate, state: "evaluating" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/stash/v1/evaluations/${historicalEvaluation.id}`,
       expect.anything(),
     );
   });

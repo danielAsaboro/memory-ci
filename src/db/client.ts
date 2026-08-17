@@ -27,7 +27,7 @@ export function createPool(connectionString: string): Pool {
     max: 10,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
-    application_name: "memory-ci",
+    application_name: "stash",
   });
 }
 

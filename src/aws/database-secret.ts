@@ -1,13 +1,13 @@
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 
+import { loadAwsConfig } from "./config";
+
 let cachedConnectionString: string | undefined;
 
 export async function resolveDatabaseConnectionString(environment: NodeJS.ProcessEnv = process.env): Promise<string> {
   if (cachedConnectionString) return cachedConnectionString;
-  if (environment.DATABASE_URL) return environment.DATABASE_URL;
-  const secretId = environment.DATABASE_SECRET_ARN;
-  if (!secretId) throw new Error("DATABASE_SECRET_ARN is required");
-  const response = await new SecretsManagerClient({ region: environment.AWS_REGION }).send(
+  const { DATABASE_SECRET_ARN: secretId, AWS_REGION: region } = loadAwsConfig(environment);
+  const response = await new SecretsManagerClient({ region }).send(
     new GetSecretValueCommand({ SecretId: secretId }),
   );
   if (!response.SecretString) throw new Error("Database secret does not contain SecretString");

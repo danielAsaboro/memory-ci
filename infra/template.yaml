@@ -19,10 +19,6 @@ Parameters:
     NoEcho: true
     MinLength: 32
     Description: Server-only key required to bootstrap a Stash workspace.
-  AllowedOrigin:
-    Type: String
-    Default: https://trystash.xyz
-
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -64,7 +60,7 @@ Resources:
       StageName: v1
       TracingEnabled: true
       Cors:
-        AllowOrigin: { Fn::Sub: "'${AllowedOrigin}'" }
+        AllowOrigin: "'https://trystash.xyz'"
         AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id,x-stash-bootstrap-key'"
         AllowMethods: "'GET,POST,OPTIONS'"
       MethodSettings:
@@ -135,7 +131,7 @@ Resources:
         Variables:
           STASH_SESSION_SECRET: { Ref: StashSessionSecret }
           STASH_BOOTSTRAP_KEY: { Ref: StashBootstrapKey }
-          ALLOWED_ORIGIN: { Ref: AllowedOrigin }
+          ALLOWED_ORIGIN: https://trystash.xyz
       Events:
         Proxy:
           Type: Api
