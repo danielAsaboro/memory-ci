@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Memory CI application and evidence plane
+Description: Stash application and evidence plane
 
 Parameters:
   DatabaseSecretArn:
@@ -9,9 +9,19 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+  StashSessionSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Server-only secret used to verify Stash workspace sessions.
+  StashBootstrapKey:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Server-only key required to bootstrap a Stash workspace.
   AllowedOrigin:
     Type: String
-    Default: http://localhost:3000
+    Default: https://trystash.xyz
 
 Globals:
   Function:
@@ -55,13 +65,13 @@ Resources:
       TracingEnabled: true
       Cors:
         AllowOrigin: { Fn::Sub: "'${AllowedOrigin}'" }
-        AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id'"
+        AllowHeaders: "'authorization,content-type,idempotency-key,x-request-id,x-stash-bootstrap-key'"
         AllowMethods: "'GET,POST,OPTIONS'"
-      Auth:
-        DefaultAuthorizer: CognitoAuthorizer
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: { Fn::GetAtt: [ReviewerUserPool, Arn] }
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit: 10
   EvidenceBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -95,7 +105,7 @@ Resources:
             Principal: { Service: [lambda.amazonaws.com] }
             Action: ["sts:AssumeRole"]
       Policies:
-        - PolicyName: memory-ci-api
+        - PolicyName: stash-api
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -117,10 +127,14 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: memory-ci-api
+      FunctionName: stash-api
       CodeUri: ../
       Handler: src/lambda/api.handler
       Role: { Fn::GetAtt: [ApiRole, Arn] }
+      Environment:
+        Variables:
+          STASH_SESSION_SECRET: { Ref: StashSessionSecret }
+          STASH_BOOTSTRAP_KEY: { Ref: StashBootstrapKey }
       Events:
         Proxy:
           Type: Api
@@ -131,7 +145,7 @@ Resources:
   OutboxFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: memory-ci-outbox
+      FunctionName: stash-outbox
       CodeUri: ../
       Handler: src/lambda/outbox.handler
       Role: { Fn::GetAtt: [ApiRole, Arn] }
@@ -145,7 +159,7 @@ Resources:
   SandboxFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: memory-ci-sandbox-refund
+      FunctionName: stash-sandbox-refund
       CodeUri: ../
       Handler: src/lambda/sandbox.handler
       Role: { Fn::GetAtt: [ApiRole, Arn] }
@@ -154,17 +168,23 @@ Resources:
       BuildProperties: { EntryPoints: [src/lambda/sandbox.ts], Minify: true, Sourcemap: true, Target: es2022 }
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
-    Properties: { LogGroupName: /aws/lambda/memory-ci-api, RetentionInDays: 30 }
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: { LogGroupName: /aws/lambda/stash-api, RetentionInDays: 30 }
   OutboxLogGroup:
     Type: AWS::Logs::LogGroup
-    Properties: { LogGroupName: /aws/lambda/memory-ci-outbox, RetentionInDays: 30 }
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: { LogGroupName: /aws/lambda/stash-outbox, RetentionInDays: 30 }
   SandboxLogGroup:
     Type: AWS::Logs::LogGroup
-    Properties: { LogGroupName: /aws/lambda/memory-ci-sandbox-refund, RetentionInDays: 30 }
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: { LogGroupName: /aws/lambda/stash-sandbox-refund, RetentionInDays: 30 }
   ApiErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Memory CI API errors
+      AlarmDescription: Stash API errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: { Ref: ApiFunction } }]
@@ -177,7 +197,7 @@ Resources:
   OutboxAgeAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Memory CI outbox worker errors
+      AlarmDescription: Stash outbox worker errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: { Ref: OutboxFunction } }]

@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 
+import type { AuthVerifier } from "../api/auth";
 import { DomainError } from "../domain/errors";
 
 export const WORKSPACE_SESSION_AUDIENCE = "stash-api";
@@ -70,6 +71,19 @@ export async function verifyWorkspaceSession(
   } catch {
     throw new DomainError("unauthorized", "Workspace session is invalid or expired.");
   }
+}
+
+export function createWorkspaceSessionVerifier(secret: string): AuthVerifier {
+  return {
+    async verify(token) {
+      const session = await verifyWorkspaceSession(token, secret);
+      return {
+        subject: session.principalId,
+        tenantId: session.tenantId,
+        roles: session.roles,
+      };
+    },
+  };
 }
 
 function secretBytes(secret: string): Uint8Array {

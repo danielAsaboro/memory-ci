@@ -1,5 +1,7 @@
 {
   "DatabaseSecretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:memory-ci/database-placeholder",
   "BedrockModelId": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  "AllowedOrigin": "https://memory-ci.asaborodaniel.chatgpt.site"
+  "StashSessionSecret": "replace-with-a-32-byte-server-only-session-secret",
+  "StashBootstrapKey": "replace-with-a-32-byte-server-only-bootstrap-key",
+  "AllowedOrigin": "https://trystash.xyz"
 }
