@@ -6,7 +6,7 @@ import { DomainError } from "../domain/errors";
 import type { Candidate, TenantContext } from "../domain/types";
 import { ingestCandidate, type IngestionDependencies } from "./ingest-candidate";
 import { redactCandidatePayload } from "./redaction";
-import { canonicalSourceSignaturePayload, createTrustedSourceKeyRegistry } from "./source-signature";
+import { canonicalSourceSignaturePayload, createTrustedSourceKeyRegistry, verifyPersistedSourceSignature } from "./source-signature";
 
 const context: TenantContext = {
   tenantId: "11111111-1111-4111-8111-111111111111",
@@ -51,7 +51,7 @@ function createHarness(overrides: Partial<IngestionDependencies> = {}) {
 const baseInput = {
   namespaceId: "33333333-3333-4333-8333-333333333333",
   memoryClass: "policy" as const,
-  trustClass: "authoritative" as const,
+  trustClass: "observed" as const,
   canonicalText: "Refunds above $150 require human review.",
   payload: { currency: "USD", refundReviewThreshold: 150 },
   idempotencyKey: "ingest-1",
@@ -73,15 +73,17 @@ describe("ingestCandidate", () => {
     const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(content)), keys.privateKey).toString("base64");
 
     const receipt = await ingestCandidate(context, {
-      ...baseInput,
+      ...baseInput, trustClass: "authoritative",
       source: { ...baseInput.source, signatureIdentity: "policy-owner", signatureKeyId: "v1", content, contentDigest: sha256(content), signature, signatureAlgorithm: "ed25519" },
     }, dependencies);
 
     expect(receipt.provenanceVerified).toBe(true);
-    expect(calls.source[0]).toMatchObject({ signatureVerified: true });
+    expect(calls.source[0]).toMatchObject({ signatureVerified: true, signaturePublicKey: publicKey });
+    const persisted = calls.source[0] as { canonicalSignedPayload: string; signatureAlgorithm: string; signature: string; signaturePublicKey: string };
+    expect(verifyPersistedSourceSignature({ canonicalPayload: persisted.canonicalSignedPayload, signatureAlgorithm: persisted.signatureAlgorithm, signature: persisted.signature, publicKey: persisted.signaturePublicKey })).toBe(true);
   });
 
-  it("does not mark tampered or untrusted signed evidence as authenticated", async () => {
+  it.each(["authenticated", "authoritative"] as const)("does not mark tampered or untrusted signed %s evidence as elevated", async (trustClass) => {
     const signedContent = "Signed threshold evidence: refunds above $150 require review.";
     const keys = generateKeyPairSync("ed25519");
     const signature = sign(null, Buffer.from(canonicalSourceSignaturePayload(signedContent)), keys.privateKey).toString("base64");
@@ -90,13 +92,23 @@ describe("ingestCandidate", () => {
 
     const receipt = await ingestCandidate(context, {
       ...baseInput,
-      trustClass: "authenticated",
+      trustClass,
       source: { ...baseInput.source, signatureIdentity: "unknown", signatureKeyId: "v1", content: `${signedContent} Tampered.`, contentDigest: sha256(`${signedContent} Tampered.`), signature, signatureAlgorithm: "ed25519" },
     }, dependencies);
 
     expect(receipt.provenanceVerified).toBe(false);
     expect(calls.source[0]).toMatchObject({ signatureVerified: false });
     expect(calls.candidate[0]).toMatchObject({ trustClass: "observed" });
+  });
+
+  it.each(["authenticated", "authoritative"] as const)("rejects unsigned %s provenance before persistence", async (trustClass) => {
+    const { calls, dependencies } = createHarness();
+    const content = `${trustClass} source without a trusted signature`;
+    await expect(ingestCandidate(context, {
+      ...baseInput, trustClass,
+      source: { ...baseInput.source, content, contentDigest: sha256(content) },
+    }, dependencies)).rejects.toMatchObject({ code: "invalid_input" });
+    expect(calls.source).toHaveLength(0);
   });
   it("canonicalizes key order, verifies provenance, and writes candidate, audit, and outbox receipts", async () => {
     const { calls, dependencies } = createHarness();

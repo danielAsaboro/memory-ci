@@ -4,7 +4,7 @@ import { DomainError } from "../domain/errors";
 export type MemoryExplanation = Readonly<{
   memoryVersionId: string;
   contentDigest: string;
-  provenance: Readonly<{ sourceType: string; sourceUri: string | null; trustClass: string; signatureIdentity: string | null; signatureVerified: boolean }>;
+  provenance: Readonly<{ sourceType: string; sourceUri: string | null; trustClass: string; signatureIdentity: string | null; signatureKeyId: string | null; signatureKeyFingerprint: string | null; signatureRegistryVersion: string | null; signatureVerified: boolean }>;
   review: Readonly<{ decision: string; reason: string; reviewerId: string }> | null;
   evaluation: Readonly<{ status: string; modelId: string | null; providerRequestId: string | null; policyVersion: string }> | null;
   activation: Readonly<{ eventType: string; revision: number; reason: string }> | null;
@@ -14,12 +14,12 @@ export type MemoryExplanation = Readonly<{
 export async function explainMemory(transaction: TenantTransaction, memoryVersionId: string): Promise<MemoryExplanation> {
   const result = await transaction.client.query<{
     id: string; content_digest: string; source_type: string; source_uri: string | null; trust_class: string;
-    signature_identity: string | null; signature_verified: boolean; review_decision: string | null;
+    signature_identity: string | null; signature_key_id: string | null; signature_key_fingerprint: string | null; signature_registry_version: string | null; signature_verified: boolean; review_decision: string | null;
     review_reason: string | null; reviewer_id: string | null; evaluation_status: string | null;
     model_id: string | null; provider_request_id: string | null; policy_version: string | null;
     event_type: string | null; activation_revision: string | null; activation_reason: string | null;
   }>(
-    `SELECT v.id,v.content_digest,s.source_type,s.source_uri,s.trust_class,s.signature_identity,s.signature_verified,
+    `SELECT v.id,v.content_digest,s.source_type,s.source_uri,s.trust_class,s.signature_identity,s.signature_key_id,s.signature_key_fingerprint,s.signature_registry_version,s.signature_verified,
             r.decision AS review_decision,r.reason AS review_reason,r.reviewer_id,
             e.status AS evaluation_status,e.model_id,e.provider_request_id,e.policy_version,
             a.event_type,a.revision AS activation_revision,a.reason AS activation_reason
@@ -46,7 +46,8 @@ export async function explainMemory(transaction: TenantTransaction, memoryVersio
     memoryVersionId: row.id, contentDigest: row.content_digest,
     provenance: {
       sourceType: row.source_type, sourceUri: row.source_uri, trustClass: row.trust_class,
-      signatureIdentity: row.signature_identity, signatureVerified: row.signature_verified,
+      signatureIdentity: row.signature_identity, signatureKeyId: row.signature_key_id, signatureKeyFingerprint: row.signature_key_fingerprint,
+      signatureRegistryVersion: row.signature_registry_version, signatureVerified: row.signature_verified,
     },
     review: row.review_decision ? { decision: row.review_decision, reason: row.review_reason!, reviewerId: row.reviewer_id! } : null,
     evaluation: row.evaluation_status ? {

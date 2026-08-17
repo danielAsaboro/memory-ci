@@ -27,3 +27,9 @@ export const candidateInputSchema = z.object({
 });
 
 export type CandidateInput = z.infer<typeof candidateInputSchema>;
+
+export function hasElevatedProvenanceFields(input: Pick<CandidateInput, "trustClass" | "source">): boolean {
+  return (input.trustClass !== "authenticated" && input.trustClass !== "authoritative") || Boolean(
+    input.source.signatureIdentity && input.source.signatureKeyId && input.source.signatureAlgorithm === "ed25519" && input.source.signature,
+  );
+}

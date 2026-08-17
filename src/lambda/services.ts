@@ -47,10 +47,10 @@ export function createApiServices(pool: Pool): ApiServices {
       } },
       sources: { upsert: async (source) => {
         await transaction.client.query(
-          `UPSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,valid_until,submitted_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          `UPSERT INTO sources (tenant_id,id,source_type,source_uri,trust_class,content_digest,signature_identity,signature_key_id,signature_key_fingerprint,signature_public_key,signature_registry_version,signature_algorithm,signature,canonical_signed_payload,signature_payload_version,signature_verified,valid_until,submitted_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
           [context.tenantId, source.id, source.sourceType, source.sourceUri, source.trustClass, source.contentDigest,
-            source.signatureIdentity, source.signatureKeyId, source.signatureKeyFingerprint, source.signatureAlgorithm, source.signature,
+            source.signatureIdentity, source.signatureKeyId, source.signatureKeyFingerprint, source.signaturePublicKey, source.signatureRegistryVersion, source.signatureAlgorithm, source.signature,
             source.canonicalSignedPayload, source.signaturePayloadVersion, source.signatureVerified, source.validUntil, source.submittedBy],
         );
         return { id: source.id };
@@ -71,8 +71,8 @@ export function createApiServices(pool: Pool): ApiServices {
       if (!candidate) throw new DomainError("not_found", "Candidate was not found.");
       if (candidate.state === "proposed") await candidates.transition(candidateId, "screening");
       const detail = await transaction.client.query<{
-        canonical_text: string; protected: boolean; signature_verified: boolean; signature_identity: string | null; valid_until: Date | null;
-      }>(`SELECT c.canonical_text,n.protected,s.signature_verified,s.signature_identity,s.valid_until FROM memory_candidates c
+        canonical_text: string; protected: boolean; signature_verified: boolean; signature: string | null; valid_until: Date | null;
+      }>(`SELECT c.canonical_text,n.protected,s.signature_verified,s.signature,s.valid_until FROM memory_candidates c
           JOIN agent_namespaces n ON n.tenant_id=c.tenant_id AND n.id=c.namespace_id
           JOIN sources s ON s.tenant_id=c.tenant_id AND s.id=c.source_id
           WHERE c.tenant_id=$1 AND c.id=$2`, [context.tenantId, candidateId]);
@@ -81,7 +81,7 @@ export function createApiServices(pool: Pool): ApiServices {
         "SELECT content_digest FROM memory_candidates WHERE tenant_id=$1 AND content_digest=$2 AND id<>$3", [context.tenantId, candidate.contentDigest, candidateId],
       );
       const findings = screen({ canonicalText: row.canonical_text, memoryClass: candidate.memoryClass,
-        trustClass: row.signature_identity && !row.signature_verified ? "authenticated" : candidate.trustClass, namespaceProtected: row.protected, sourceSignatureVerified: row.signature_verified,
+        trustClass: row.signature && !row.signature_verified ? "authenticated" : candidate.trustClass, namespaceProtected: row.protected, sourceSignatureVerified: row.signature_verified,
         sourceExpiresAt: row.valid_until ?? undefined, contentDigest: candidate.contentDigest,
         seenContentDigests: seen.rows.map((item) => item.content_digest), attributionPreserved: true, now: new Date() });
       for (const finding of findings) await transaction.client.query(

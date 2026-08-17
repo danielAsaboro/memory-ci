@@ -1,7 +1,7 @@
 import type { Candidate, TenantContext } from "../domain/types";
 import type { CreateCandidateInput } from "../db/candidates";
 import { DomainError } from "../domain/errors";
-import { candidateInputSchema, type CandidateInput } from "../contracts/candidate";
+import { candidateInputSchema, hasElevatedProvenanceFields, type CandidateInput } from "../contracts/candidate";
 import { canonicalJson, sha256, verifyProvenanceDigest } from "./provenance";
 import { redactCandidatePayload } from "./redaction";
 import { keyFingerprint, type TrustedSourceKeyRegistry, verifyTrustedSourceSignature } from "./source-signature";
@@ -10,7 +10,7 @@ type SourceInput = Readonly<{
   id: string; tenantId: string; sourceType: CandidateInput["source"]["sourceType"];
   sourceUri: string | null; trustClass: CandidateInput["trustClass"]; contentDigest: string;
   signatureIdentity: string | null; signatureKeyId: string | null; signatureKeyFingerprint: string | null;
-  signatureAlgorithm: string | null; signature: string | null; canonicalSignedPayload: string | null;
+  signaturePublicKey: string | null; signatureRegistryVersion: string | null; signatureAlgorithm: string | null; signature: string | null; canonicalSignedPayload: string | null;
   signaturePayloadVersion: number | null; signatureVerified: boolean; validUntil: Date | null; submittedBy: string;
 }>;
 
@@ -43,6 +43,7 @@ export async function ingestCandidate(
     });
   }
   const input = parsed.data;
+  if (!hasElevatedProvenanceFields(input)) throw new DomainError("invalid_input", "Elevated provenance requires a trusted Ed25519 signature.");
   const namespace = await dependencies.namespaces.get(input.namespaceId);
   if (!namespace) throw new DomainError("not_found", "Memory namespace was not found.");
   if (namespace.protected && !(await dependencies.authorizeProtectedNamespace(context, input.namespaceId))) {
@@ -62,12 +63,14 @@ export async function ingestCandidate(
 
   const signature = verifyTrustedSourceSignature(input.source, dependencies.trustedSourceKeys);
   const signatureVerified = signature.verified;
-  const trustClass = input.trustClass === "authenticated" && !signatureVerified ? "observed" : input.trustClass;
+  const elevated = input.trustClass === "authenticated" || input.trustClass === "authoritative";
+  const trustClass = elevated && !signatureVerified ? "observed" : input.trustClass;
   await dependencies.sources.upsert({
     id: input.source.id, tenantId: context.tenantId, sourceType: input.source.sourceType,
     sourceUri: input.source.sourceUri ?? null, trustClass,
     contentDigest: input.source.contentDigest, signatureIdentity: input.source.signatureIdentity ?? null,
     signatureKeyId: input.source.signatureKeyId ?? null, signatureKeyFingerprint: signature.key ? keyFingerprint(signature.key.publicKey) : null,
+    signaturePublicKey: signature.key?.publicKey ?? null, signatureRegistryVersion: signature.key ? dependencies.trustedSourceKeys.version : null,
     signatureAlgorithm: input.source.signatureAlgorithm ?? null, signature: input.source.signature ?? null,
     canonicalSignedPayload: signature.canonicalPayload, signaturePayloadVersion: signature.canonicalPayload ? 1 : null,
     signatureVerified, validUntil: input.source.validUntil ?? null,

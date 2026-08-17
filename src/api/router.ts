@@ -1,6 +1,6 @@
 import { z, type ZodType } from "zod";
 
-import { candidateInputSchema } from "../contracts/candidate";
+import { candidateInputSchema, hasElevatedProvenanceFields } from "../contracts/candidate";
 import { DomainError } from "../domain/errors";
 import { readBearerToken, type AuthClaims, type AuthVerifier } from "./auth";
 import { errorResponse, json, parseJson } from "./http";
@@ -30,7 +30,9 @@ const review = z.object({ evaluationRunId: identifier, decision: z.enum(["approv
 const promote = z.object({ reviewId: identifier, stableKey: identifier, reason: z.string().min(1).max(2_000) }).strict();
 const rollback = z.object({ targetVersionId: identifier, reason: z.string().min(1).max(2_000) }).strict();
 const search = z.object({ namespaceId: identifier, query: z.string().min(1).max(10_000), purpose: z.string().min(1).max(255), revision: z.number().int().nonnegative().optional() }).strict();
-const candidateApiSchema = candidateInputSchema.omit({ idempotencyKey: true }).strict();
+const candidateApiSchema = candidateInputSchema.omit({ idempotencyKey: true }).strict().superRefine((input, context) => {
+  if (!hasElevatedProvenanceFields(input as Parameters<typeof hasElevatedProvenanceFields>[0])) context.addIssue({ code: "custom", path: ["source"], message: "Elevated provenance requires a trusted Ed25519 signature." });
+});
 
 type Route = Readonly<{
   method: string; pattern: RegExp; service: keyof ApiServices; schema?: ZodType;

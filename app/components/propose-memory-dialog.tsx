@@ -43,7 +43,8 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
     },
   });
   const change = (name: keyof Form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((value) => ({ ...value, [name]: event.target.type === "checkbox" ? (event.target as HTMLInputElement).checked : event.target.value }));
-  const valid = Boolean(form.namespaceId && form.canonicalText && form.sourceContent && form.sourceUri);
+  const elevated = form.trustClass === "authenticated" || form.trustClass === "authoritative";
+  const valid = Boolean(form.namespaceId && form.canonicalText && form.sourceContent && form.sourceUri && (!elevated || (form.signatureIdentity && form.signatureKeyId && form.signature)));
   const error = mutation.error as StashApiError | null;
   return <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="propose-memory-title"><form className="confirm-dialog" onSubmit={(event) => { event.preventDefault(); if (valid) mutation.mutate(); }}>
     <button type="button" className="dialog-close" onClick={onClose} aria-label="Close proposal">×</button><h3 id="propose-memory-title">Propose memory</h3>

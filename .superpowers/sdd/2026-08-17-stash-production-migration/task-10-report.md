@@ -63,3 +63,15 @@ The only deterministic double is the Bedrock semantic-judge adapter boundary in 
 
 - The local embedding adapter and Bedrock semantic-judge adapter exist only at the E2E/test external-provider boundary. Production has no lexical embedding fallback and requires managed Bedrock configuration. Task 11 remains responsible for live AWS provider deployment.
 - The test-only trusted private key is confined to the Playwright spec; the server sees only its configured public registry entry. No private key is exposed through the product UI or production configuration.
+
+## Fix Round 3
+
+- Elevated provenance is now symmetric: both `authenticated` and `authoritative` require identity, trusted key ID, Ed25519 algorithm, and signature at the API/UI boundary. The server independently resolves and verifies all four; untrusted or tampered elevated evidence is persisted as observed and is screened as an unverified signature attempt.
+- Source evidence now includes the server-resolved, normalized SPKI Ed25519 public key and immutable registry version alongside key fingerprint, signature, algorithm, canonical signed payload, and payload version. Independent re-verification operates only on that persisted evidence, so an active-registry rotation/removal cannot rewrite historical authenticity.
+- Forward migration `010_trusted_source_signature_evidence.sql` invalidates legacy `signature_verified=true` rows that lack complete trusted evidence and downgrades both source and candidate provenance. The isolated Cockroach migration test verifies source/candidate upgrade behavior.
+
+### Fix Round 3 evidence
+
+- RED/GREEN: `npm run test -- --run src/services/ingest-candidate.test.ts` — 10 passed, including authenticated/authoritative unsigned and tampered/untrusted cases plus persisted-key re-verification.
+- `npm run test:integration -- --run src/db/migrations.integration.test.ts src/services/memory-release.integration.test.ts` — 13 passed, including the legacy-signature migration path.
+- `npm run test:e2e -- --project=desktop tests/e2e/poison-and-promote.spec.ts` — 4 passed.
