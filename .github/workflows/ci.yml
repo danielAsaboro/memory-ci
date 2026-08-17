@@ -27,12 +27,12 @@ jobs:
       - run: npm ci
       - name: Start CockroachDB
         run: |
-          docker run -d --name memory-ci-cockroach -p 26257:26257 -p 8080:8080 cockroachdb/cockroach:v26.2.3 start-single-node --insecure
+          docker run -d --name stash-cockroach -p 26257:26257 -p 8080:8080 cockroachdb/cockroach:v26.2.3 start-single-node --insecure
           for attempt in {1..30}; do
             curl --fail --silent http://localhost:8080/health?ready=1 && exit 0
             sleep 2
           done
-          docker logs memory-ci-cockroach
+          docker logs stash-cockroach
           exit 1
       - run: npm test
       - run: npm run test:integration
@@ -44,6 +44,8 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TEST_DATABASE_ADMIN_URL: postgresql://root@localhost:26258/defaultdb?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -51,6 +53,15 @@ jobs:
           node-version: 22.13.0
           cache: npm
       - run: npm ci
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name stash-e2e-cockroach -p 26258:26257 -p 8081:8080 cockroachdb/cockroach:v26.2.3 start-single-node --insecure
+          for attempt in {1..30}; do
+            curl --fail --silent http://localhost:8081/health?ready=1 && exit 0
+            sleep 2
+          done
+          docker logs stash-e2e-cockroach
+          exit 1
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
