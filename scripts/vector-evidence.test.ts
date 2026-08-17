@@ -24,4 +24,9 @@ describe("production vector evidence configuration", () => {
     for (const status of ["running", "paused", "failed", "canceled", "reverting"]) expect(() => selectReadyVectorIndexJob([{ ...jobs[0], status }], "memory_versions_embedding_idx", "memory_versions")).toThrow(/succeeded/i);
     expect(() => selectReadyVectorIndexJob([{ ...jobs[0], description: "CREATE VECTOR INDEX other_idx ON memory_versions" }], "memory_versions_embedding_idx", "memory_versions")).toThrow(/rerun/i);
   });
+
+  it("rejects an archive table whose name merely extends the target table token", () => {
+    const archiveJob = [{ job_id: "2", status: "succeeded", finished: "2026-08-17T17:00:00Z", description: "CREATE VECTOR INDEX memory_versions_embedding_idx ON public.memory_versions_archive (embedding)" }];
+    expect(() => selectReadyVectorIndexJob(archiveJob, "memory_versions_embedding_idx", "memory_versions")).toThrow(/rerun/i);
+  });
 });

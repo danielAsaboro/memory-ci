@@ -626,7 +626,7 @@ Expected: CloudFormation reaches `CREATE_COMPLETE` or `UPDATE_COMPLETE` and outp
 
 - [ ] **Step 5: Run authenticated cloud smoke tests**
 
-Export the stack output with `STASH_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name stash-production --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)`, then run `npm run aws:smoke` and `npm run cloud:evidence`.
+Export both stack outputs with `STASH_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name stash-production --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)` and `STASH_BEDROCK_LOGGING_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name stash-production --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)`, then run `npm run aws:smoke` and `npm run cloud:evidence`.
 
 Expected: health, workspace creation, CockroachDB persistence, Bedrock evaluation, S3 evidence, EventBridge dispatch, CloudWatch logs, and X-Ray traces are verified with redacted identifiers.
 

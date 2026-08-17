@@ -71,6 +71,7 @@
    export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EvidenceBucketName'].OutputValue" --output text)"
    export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
    export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+   export STASH_BEDROCK_LOGGING_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)"
    export STASH_BOOTSTRAP_KEY='retrieve-securely-from-production-parameter-source'
    STASH_PRODUCTION_EVIDENCE=1 COCKROACH_CLUSTER_ID='cloud-cluster-id' npm run vector:evidence -- /tmp/stash-vector-evidence.json
    npm run aws:smoke -- /tmp/stash-aws-smoke.json
@@ -117,6 +118,7 @@ export EVIDENCE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STAS
 export EVENT_BUS_NAME="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EventBusName'].OutputValue" --output text)"
 export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
 export BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
+export STASH_BEDROCK_LOGGING_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)"
 export STASH_API_BASE_URL="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)"
 export STASH_BOOTSTRAP_KEY='retrieve-securely-without-echoing'
 npm run aws:smoke -- "$STASH_SMOKE_EVIDENCE_FILE"
@@ -165,3 +167,12 @@ Deploy the R3 SAM update before collecting evidence so the EventBridge observati
 - Closed the `SHOW JOBS` readiness gap. Production vector evidence now queries the retained matching `memory_versions_embedding_idx` job, requires the latest exact table/index description to be `succeeded` with a finished timestamp, and records job ID/status/time in the strict receipt. Running, paused, failed, canceled, reverting, absent, and mismatched jobs fail closed with an instruction to rerun/repair the index migration.
 - Focused vector/schema tests, typecheck, lint, and diff check passed. Full gates should be rerun after this final follow-up before deployment.
 - Post-follow-up full gate passed: `npm run verify` (258 unit tests/41 files; 30 integration tests/6 files), `npm run infra:validate`, `npm run infra:build`, `npm run production:audit` (`{"ok":true,"violations":[]}`), and diff/status checks.
+
+## Task 12 carried-correction command requirement
+
+Before every live `npm run aws:smoke`, export the stack-owned Bedrock delivery role without printing it:
+
+```bash
+export STASH_BEDROCK_LOGGING_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STASH_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='BedrockLoggingRoleArn'].OutputValue" --output text)"
+npm run aws:smoke -- "$STASH_SMOKE_EVIDENCE_FILE"
+```

@@ -66,4 +66,10 @@ describe("AWS SAM template", () => {
     expect((source.match(/xray:PutTraceSegments/g) ?? []).length).toBe(3);
     expect((source.match(/xray:PutTelemetryRecords/g) ?? []).length).toBe(3);
   });
+
+  it("builds the Bedrock log-stream ARN from the log-group name without an embedded wildcard", async () => {
+    const source = await readFile(templatePath, "utf8");
+    expect(source).toContain('Fn::Sub: "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BedrockInvocationLogGroup}:log-stream:*"');
+    expect(source).not.toContain("${BedrockInvocationLogGroup.Arn}:log-stream");
+  });
 });

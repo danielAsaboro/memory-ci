@@ -8,8 +8,9 @@ import { atomicWriteJson, receiptSchema, safeErrorMessage, validateEvidenceConte
 type VectorIndexJob = Readonly<{ job_id: string; status: string; finished: string | null; description: string }>;
 export function selectReadyVectorIndexJob(rows: readonly VectorIndexJob[], indexName: string, tableName: string): VectorIndexJob {
   const normalized = (value: string) => value.replaceAll('"', "").replace(/\s+/g, " ").trim().toLowerCase();
-  const expected = `create vector index ${indexName} on public.${tableName}`;
-  const matching = rows.filter((job) => normalized(job.description).startsWith(expected));
+  const escapeForRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expected = new RegExp(`^create vector index ${escapeForRegExp(indexName)} on public\\.${escapeForRegExp(tableName)}(?=\\s|\\(|;|$)`);
+  const matching = rows.filter((job) => expected.test(normalized(job.description)));
   const latest = matching[0];
   if (!latest) throw new Error("No retained matching vector-index job exists; rerun the index migration and then evidence collection.");
   if (latest.status.toLowerCase() !== "succeeded" || !latest.finished) throw new Error("Latest matching vector-index job is not succeeded; rerun or repair the index migration before evidence collection.");
