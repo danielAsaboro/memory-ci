@@ -20,12 +20,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: { default: "Stash", template: "%s · Stash" },
-  description: "Governed agent-memory releases for production AI systems.",
+  description: "Release control for production AI-agent memory.",
   metadataBase: new URL("https://trystash.xyz"),
   openGraph: {
-    title: "Stash — governed agent-memory releases",
-    description: "Propose, evaluate, promote, inspect, and roll back agent memory with production controls.",
-    images: [{ url: "/stash-social.png", width: 1731, height: 909, alt: "Stash governs the release path for production agent memory" }],
+    title: "Stash — ship agent memory like code",
+    description: "Pull requests, behavioral evaluation, atomic promotion, lineage, and rollback for production agent memory.",
+    images: [{ url: "/stash-social.png", width: 1731, height: 909, alt: "A governed agent-memory release path with a quarantined branch" }],
   },
   twitter: { card: "summary_large_image", images: ["/stash-social.png"] },
   icons: {

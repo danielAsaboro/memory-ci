@@ -26,12 +26,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const workspaceName = workspace?.workspaceName ?? "Connecting workspace";
   const connectionLabel = state === "ready" ? "Workspace connected" : state === "error" ? "Workspace unavailable" : "Connecting workspace";
   const initials = workspaceName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "…";
+
+  if (pathname === "/") {
+    return <>{children}</>;
+  }
   return (
     <div className="app-frame">
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`} aria-label="Primary navigation">
         <div className="brand-row">
           <Link href="/overview" className="brand" onClick={() => setOpen(false)}>
-            <span className="brand-mark" aria-hidden="true">S</span>
+            <span className="brand-mark" aria-hidden="true"><ShieldCheck size={18} strokeWidth={2.2} /></span>
             <span>Stash</span>
           </Link>
           <button className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setOpen(false)}><X size={19} /></button>
