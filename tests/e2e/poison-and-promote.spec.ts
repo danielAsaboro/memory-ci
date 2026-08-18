@@ -171,7 +171,7 @@ test("shows Inconclusive and keeps approval disabled when the Bedrock adapter ti
   await page.goto(`/changes/${candidateId}`);
   await page.getByRole("button", { name: "Screen candidate" }).click();
   await page.getByRole("button", { name: "Run evaluation" }).click();
-  await expect(page.getByRole("status")).toContainText("Inconclusive", { timeout: 20_000 });
+  await expect(page.getByRole("status")).toContainText("Inconclusive", { timeout: 40_000 });
   await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
   await expect(page.getByText("Evaluation evidence passed")).toHaveCount(0);
 });

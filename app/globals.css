@@ -2,8 +2,8 @@
 
 :root {
   --ink: #171315;
-  --muted: #6d6265;
-  --faint: #817578;
+  --muted: #5d5155;
+  --faint: #66575c;
   --line: #ded7d5;
   --soft-line: #eee8e6;
   --paper: #fffdfc;
@@ -188,3 +188,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .spin { color:#f22962; border-radius:50%; box-shadow:0 0 0 1px rgba(242,41,98,.12),0 0 24px rgba(242,41,98,.14); }
 @media (max-width:760px) { .topbar { height:62px; }.page-shell { padding:26px 18px 60px; }.overview-hero { border-radius:16px; background-size:cover,auto 70%; } }
 @media (prefers-reduced-motion:reduce) { .spin { animation-duration:1.5s; } }
+.vibe-work { animation:none; }
+.work-mini span { color:#d1c8cb; }
