@@ -265,9 +265,14 @@ export function createReadWorkspaceServices(pool: Pool): ReadWorkspaceServices {
         );
         const row = result.rows[0];
         if (!row) throw new DomainError("not_found", "Workspace was not found.");
+        const namespaces = await transaction.client.query<{ id: string; name: string }>(
+          "SELECT id,name FROM agent_namespaces WHERE tenant_id=$1 ORDER BY name,id",
+          [transaction.tenantId],
+        );
         const agentCount = asNumber(row.agent_count);
         return workspaceStatusSchema.parse({
           workspace: { id: row.id, name: row.name }, namespaceCount: asNumber(row.namespace_count),
+          namespaces: namespaces.rows,
           integrations: {
             cockroach,
             aws: awsIntegration(),

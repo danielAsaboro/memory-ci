@@ -158,6 +158,30 @@ describe("/api/stash/[...path]", () => {
     await expect(response.json()).resolves.toEqual([evaluation]);
   });
 
+  it("forwards the persisted read receipt and rejects tenant-bearing search results", async () => {
+    const token = await signWorkspaceSession(session, sessionSecret);
+    cookieStore.get.mockReturnValue({ value: token });
+    const memory = {
+      id: "11111111-1111-4111-8111-111111111111", namespaceId: "22222222-2222-4222-8222-222222222222",
+      lineageId: "33333333-3333-4333-8333-333333333333", candidateId: "44444444-4444-4444-8444-444444444444",
+      version: 1, revision: 1, active: true, canonicalPayload: { threshold: 150 }, contentDigest: "a".repeat(64),
+      validFrom: "2026-08-17T00:00:00.000Z", validUntil: null,
+    };
+    const receipt = { namespaceId: memory.namespaceId, revision: 1, readReceiptId: "55555555-5555-4555-8555-555555555555", memories: [memory] };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(receipt), { headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...receipt, memories: [{ ...memory, tenantId: "66666666-6666-4666-8666-666666666666" }] }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = () => new Request("https://console.stash.test/api/stash/v1/memory/search", { method: "POST", headers: { origin: "https://console.stash.test", "content-type": "application/json" }, body: JSON.stringify({ namespaceId: memory.namespaceId, query: "refund", purpose: "test" }) });
+
+    const valid = await POST(request(), routeContext(["v1", "memory", "search"]));
+    const unsafe = await POST(request(), routeContext(["v1", "memory", "search"]));
+
+    expect(valid.status).toBe(200);
+    await expect(valid.json()).resolves.toEqual(receipt);
+    expect(unsafe.status).toBe(502);
+  });
+
   it("projects valid categorical explanation values and fails closed for invalid provider categories", async () => {
     const token = await signWorkspaceSession(session, sessionSecret);
     cookieStore.get.mockReturnValue({ value: token });

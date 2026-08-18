@@ -29,7 +29,7 @@ const empty = z.object({}).strict();
 const review = z.object({ evaluationRunId: identifier, decision: z.enum(["approved", "rejected", "quarantined"]), reason: z.string().min(1).max(2_000) }).strict();
 const promote = z.object({ reviewId: identifier, stableKey: identifier, reason: z.string().min(1).max(2_000) }).strict();
 const rollback = z.object({ targetVersionId: identifier, reason: z.string().min(1).max(2_000) }).strict();
-const search = z.object({ namespaceId: identifier, query: z.string().min(1).max(10_000), purpose: z.string().min(1).max(255), revision: z.number().int().nonnegative().optional() }).strict();
+const search = z.object({ namespaceId: identifier, agentId: identifier.optional(), query: z.string().min(1).max(10_000), purpose: z.string().min(1).max(255), revision: z.number().int().nonnegative().optional() }).strict();
 const candidateApiSchema = candidateInputSchema.omit({ idempotencyKey: true }).strict().superRefine((input, context) => {
   if (!hasElevatedProvenanceFields(input as Parameters<typeof hasElevatedProvenanceFields>[0])) context.addIssue({ code: "custom", path: ["source"], message: "Elevated provenance requires a trusted Ed25519 signature." });
 });

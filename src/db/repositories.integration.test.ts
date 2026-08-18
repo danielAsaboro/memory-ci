@@ -16,6 +16,7 @@ import { createApiServices } from "../lambda/services";
 import { dispatchOutboxEvents } from "../lambda/outbox";
 import type { EventBridgeTransport } from "../aws/eventbridge";
 import { canonicalSourceSignaturePayload, verifyPersistedSourceSignature } from "../services/source-signature";
+import { embedSemanticText } from "../services/semantic-embedding";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ??
   "postgresql://root@127.0.0.1:26258/defaultdb?sslmode=disable";
@@ -284,6 +285,37 @@ describe("tenant-bound repositories", () => {
     expect(history.atTwo.map((item) => item.contentDigest)).toContain("digest-v2");
     expect(history.rolledBack.revision).toBe(3);
     expect(history.rolledBack.contentDigest).toBe("digest-v1");
+
+    const agentId = randomUUID();
+    await withTenantTransaction(pool, seeded.tenantId, async ({ client }) => {
+      await client.query(
+        "INSERT INTO principals (tenant_id, id, kind, display_name) VALUES ($1, $2, 'agent', 'Northstar Refund Agent')",
+        [seeded.tenantId, agentId],
+      );
+      await client.query(
+        "UPDATE memory_versions SET embedding=$3 WHERE tenant_id=$1 AND id=$2",
+        [seeded.tenantId, history.rolledBack.id, embedSemanticText("refund review threshold")],
+      );
+    });
+    const retrieval = await createApiServices(pool).searchMemory(
+      { tenantId: seeded.tenantId, principalId: seeded.principalId, requestId: randomUUID(), roles: ["admin"] },
+      { namespaceId: seeded.namespaceId, agentId, query: "When must a person review a refund?", purpose: "integration proof" },
+    );
+    expect(retrieval).toMatchObject({
+      namespaceId: seeded.namespaceId,
+      revision: 3,
+      readReceiptId: expect.any(String),
+      memories: [expect.objectContaining({ id: history.rolledBack.id })],
+    });
+    const persistedRead = await pool.query<{ id: string; principal_id: string; returned_version_ids: string[] }>(
+      "SELECT id,principal_id,returned_version_ids FROM memory_reads WHERE tenant_id=$1 AND id=$2",
+      [seeded.tenantId, (retrieval as { readReceiptId: string }).readReceiptId],
+    );
+    expect(persistedRead.rows).toEqual([{
+      id: (retrieval as { readReceiptId: string }).readReceiptId,
+      principal_id: agentId,
+      returned_version_ids: [history.rolledBack.id],
+    }]);
 
     const evidence = await withTenantTransaction(pool, seeded.tenantId, async (transaction) => ({
       audit: await new AuditRepository(transaction).list(),

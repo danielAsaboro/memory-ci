@@ -188,10 +188,31 @@ export function createApiServices(pool: Pool): ApiServices {
       return { memoryVersionId: version.id, lineageId: version.lineageId, candidateId: version.candidateId, revision: version.revision, version: version.version, active: version.active };
       } });
     }),
-    searchMemory: (context, input) => run(context, (transaction) => retrieveActiveMemory(transaction, context, {
-      namespaceId: asString(input, "namespaceId"), query: asString(input, "query"), purpose: asString(input, "purpose"),
-      revision: typeof input.revision === "number" ? input.revision : undefined,
-    }, embeddings)),
+    searchMemory: (context, input) => run(context, async (transaction) => {
+      const namespaceId = asString(input, "namespaceId");
+      const agentId = typeof input.agentId === "string" ? input.agentId : context.principalId;
+      if (agentId !== context.principalId) {
+        requireLifecycleRole(context);
+        const agent = await transaction.client.query<{ id: string }>(
+          "SELECT id FROM principals WHERE tenant_id=$1 AND id=$2 AND kind='agent'",
+          [context.tenantId, agentId],
+        );
+        if (!agent.rows[0]) throw new DomainError("not_found", "Agent was not found.");
+      }
+      const result = await retrieveActiveMemory(transaction, { ...context, principalId: agentId }, {
+        namespaceId, query: asString(input, "query"), purpose: asString(input, "purpose"),
+        revision: typeof input.revision === "number" ? input.revision : undefined,
+      }, embeddings);
+      return {
+        namespaceId: result.namespaceId,
+        revision: result.revision,
+        readReceiptId: result.readReceiptId,
+        memories: result.memories.map(({ tenantId, ...memory }) => {
+          if (tenantId !== context.tenantId) throw new DomainError("forbidden", "Cross-tenant memory was rejected.");
+          return memory;
+        }),
+      };
+    }),
     explainMemory: (context, input) => run(context, (transaction) => explainMemory(transaction, asString(input, "memoryId"))),
     namespaceRevision: (context, input) => run(context, async (transaction) => {
       const namespaceId = asString(input, "namespaceId");

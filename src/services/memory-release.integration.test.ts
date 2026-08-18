@@ -134,6 +134,7 @@ describe("memory release flow", () => {
     const explanation = await withTenantTransaction(pool, tenantId, (transaction) => explainMemory(transaction, active2.id));
 
     expect(current.revision).toBe(2);
+    expect(current.readReceiptId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     expect(current.memories[0]?.canonicalPayload).toEqual({ refundReviewThreshold: 150 });
     expect(pinned.memories[0]?.canonicalPayload).toEqual({ refundReviewThreshold: 100 });
     expect(explanation).toMatchObject({
@@ -154,8 +155,9 @@ describe("memory release flow", () => {
     expect(afterRollback.memories[0]?.contentDigest).toBe("refund-policy-v1");
 
     const reads = await withTenantTransaction(pool, tenantId, ({ client }) => client.query(
-      "SELECT principal_id,revision FROM memory_reads WHERE tenant_id=$1 ORDER BY created_at", [tenantId],
+      "SELECT id,principal_id,revision FROM memory_reads WHERE tenant_id=$1 ORDER BY created_at", [tenantId],
     ));
+    expect(reads.rows).toContainEqual(expect.objectContaining({ id: current.readReceiptId }));
     expect(reads.rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ principal_id: agentId, revision: "2" }),
       expect.objectContaining({ principal_id: agentId, revision: "1" }),

@@ -8,7 +8,12 @@ import { ProposeMemoryDialog } from "./propose-memory-dialog";
 
 function renderDialog() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>
-    <ProposeMemoryDialog workspaceId="workspace-1" onClose={vi.fn()} />
+    <ProposeMemoryDialog
+      workspaceId="workspace-1"
+      namespaceId="22222222-2222-4222-8222-222222222222"
+      namespaceName="Refund policy"
+      onClose={vi.fn()}
+    />
   </QueryClientProvider>);
 }
 
@@ -20,8 +25,10 @@ describe("ProposeMemoryDialog", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderDialog();
     expect(screen.queryByLabelText("Signature verified")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Namespace ID")).toHaveValue("22222222-2222-4222-8222-222222222222");
+    expect(screen.getByLabelText("Namespace ID")).toHaveAttribute("readonly");
+    expect(screen.getByText("Refund policy")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Namespace ID"), { target: { value: "22222222-2222-4222-8222-222222222222" } });
     fireEvent.change(screen.getByLabelText("Canonical text"), { target: { value: "Refunds above $150 require review." } });
     fireEvent.change(screen.getByLabelText("Source URI"), { target: { value: "https://records.example/refunds" } });
     fireEvent.change(screen.getByLabelText("Source content"), { target: { value: "Signed refund policy update." } });

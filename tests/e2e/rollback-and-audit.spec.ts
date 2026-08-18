@@ -9,7 +9,7 @@ test("supports keyboard-only review controls without fixture candidate IDs", asy
   await page.goto("/changes");
   const [{ namespaceId }] = await (await candidates).json() as Array<{ namespaceId: string }>;
   await page.getByRole("button", { name: "Propose memory" }).click();
-  await page.getByLabel("Namespace ID").fill(namespaceId);
+  await expect(page.getByLabel("Namespace ID")).toHaveValue(namespaceId);
   await page.getByLabel("Memory class").selectOption("fact");
   await page.getByLabel("Trust class").selectOption("observed");
   await page.getByLabel("Canonical text").fill(`Keyboard review ${Date.now()}`);

@@ -2,12 +2,52 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LineageTimeline } from "../components/lineage-timeline";
 import { queryKeys } from "../lib/api-client";
 import { MemoryExplorer } from "../components/memory-explorer";
 const memory = { id: "11111111-1111-4111-8111-111111111111", namespaceId: "22222222-2222-4222-8222-222222222222", namespaceName: "claims", lineageId: "33333333-3333-4333-8333-333333333333", stableKey: "live-memory", candidateId: "44444444-4444-4444-8444-444444444444", memoryClass: "policy" as const, canonicalText: "Live payload", contentDigest: "digest", version: 5, revision: 37, active: true, reads: 9, validFrom: "2026-08-17T10:00:00.000Z", validUntil: null };
-describe("memory explorer", () => { it("filters live records", async () => { const user = userEvent.setup(); render(<MemoryExplorer memories={[memory]} />); await user.type(screen.getByLabelText("Search active memory"), "live"); expect(screen.getByText("live-memory")).toBeInTheDocument(); }); it("renders returned lineage", () => { render(<QueryClientProvider client={new QueryClient()}><LineageTimeline lineage={[memory]} /></QueryClientProvider>); expect(screen.getByText("Version 5")).toBeInTheDocument(); }); it("shows the rollback receipt revision and invalidates the displayed memory", async () => { const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); const invalidate = vi.spyOn(client, "invalidateQueries"); const target = { ...memory, id: "55555555-5555-4555-8555-555555555555", version: 4, revision: 36, active: false }; vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ memoryVersionId: memory.id, lineageId: memory.lineageId, candidateId: memory.candidateId, revision: 38, version: 6, active: true }), { headers: { "content-type": "application/json" } }))); render(<QueryClientProvider client={client}><LineageTimeline workspaceId="workspace-1" memoryId={memory.id} lineage={[target, memory]} /></QueryClientProvider>); fireEvent.click(screen.getByRole("button", { name: "Rollback here" })); fireEvent.change(screen.getByLabelText("Rollback confirmation"), { target: { value: "ROLLBACK" } }); fireEvent.change(screen.getByLabelText("Rollback reason"), { target: { value: "Correct live policy" } }); fireEvent.click(screen.getByRole("button", { name: "Rollback" })); await act(async () => { await Promise.resolve(); await Promise.resolve(); }); expect(screen.getByRole("status")).toHaveTextContent("revision 38"); expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.memory("workspace-1", memory.id) }); });
+afterEach(() => vi.unstubAllGlobals());
+describe("memory explorer", () => { it("filters live records", async () => { const user = userEvent.setup(); render(<MemoryExplorer memories={[memory]} />); await user.type(screen.getByLabelText("Search active memory"), "live"); expect(screen.getByText("live-memory")).toBeInTheDocument(); });
+
+  it("performs semantic retrieval and displays the persisted agent read receipt", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      namespaceId: memory.namespaceId,
+      revision: 37,
+      readReceiptId: "66666666-6666-4666-8666-666666666666",
+      memories: [{
+        id: memory.id,
+        namespaceId: memory.namespaceId,
+        lineageId: memory.lineageId,
+        candidateId: memory.candidateId,
+        version: memory.version,
+        revision: memory.revision,
+        active: true,
+        canonicalPayload: { refundReviewThreshold: 150 },
+        contentDigest: memory.contentDigest,
+        validFrom: memory.validFrom,
+        validUntil: null,
+      }],
+    }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<MemoryExplorer workspaceId="workspace-1" memories={[memory]} agent={{ id: "77777777-7777-4777-8777-777777777777", name: "Northstar Refund Agent" }} />);
+
+    await user.type(screen.getByLabelText("Semantic memory query"), "When must a person review a refund?");
+    await user.click(screen.getByRole("button", { name: "Retrieve semantically" }));
+
+    expect(await screen.findByText("Northstar Refund Agent retrieved revision 37")).toBeInTheDocument();
+    expect(screen.getByText("66666666-6666-4666-8666-666666666666")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /live-memory/ })).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      namespaceId: memory.namespaceId,
+      agentId: "77777777-7777-4777-8777-777777777777",
+      query: "When must a person review a refund?",
+      purpose: "judge-visible agent retrieval",
+    });
+  });
+
+  it("renders returned lineage", () => { render(<QueryClientProvider client={new QueryClient()}><LineageTimeline lineage={[memory]} /></QueryClientProvider>); expect(screen.getByText("Version 5")).toBeInTheDocument(); }); it("shows the rollback receipt revision and invalidates the displayed memory", async () => { const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); const invalidate = vi.spyOn(client, "invalidateQueries"); const target = { ...memory, id: "55555555-5555-4555-8555-555555555555", version: 4, revision: 36, active: false }; vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ memoryVersionId: memory.id, lineageId: memory.lineageId, candidateId: memory.candidateId, revision: 38, version: 6, active: true }), { headers: { "content-type": "application/json" } }))); render(<QueryClientProvider client={client}><LineageTimeline workspaceId="workspace-1" memoryId={memory.id} lineage={[target, memory]} /></QueryClientProvider>); fireEvent.click(screen.getByRole("button", { name: "Rollback here" })); fireEvent.change(screen.getByLabelText("Rollback confirmation"), { target: { value: "ROLLBACK" } }); fireEvent.change(screen.getByLabelText("Rollback reason"), { target: { value: "Correct live policy" } }); fireEvent.click(screen.getByRole("button", { name: "Rollback" })); await act(async () => { await Promise.resolve(); await Promise.resolve(); }); expect(screen.getByRole("status")).toHaveTextContent("revision 38"); expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.memory("workspace-1", memory.id) }); });
 
   it("retains a rollback request key for the same retry and rotates it after request fields change", async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });

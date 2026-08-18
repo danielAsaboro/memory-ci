@@ -2,10 +2,10 @@ import { z, type ZodType } from "zod";
 
 import {
   agentSchema, auditEventSchema, candidateSummarySchema, evaluationDetailSchema, evaluationSummarySchema,
-  integrationsSchema, memoryDetailSchema, memorySummarySchema, overviewSchema, workspaceStatusSchema,
+  integrationsSchema, memoryDetailSchema, memorySummarySchema, memoryRetrievalReceiptSchema, overviewSchema, workspaceStatusSchema,
   candidateReceiptSchema, evaluationRequestSchema, memoryMutationReceiptSchema, reviewReceiptSchema, screeningReceiptSchema,
   type Agent, type AuditEvent, type CandidateSummary, type EvaluationDetail, type EvaluationSummary,
-  type MemoryDetail, type MemorySummary, type Overview, type WorkspaceStatus, type CandidateReceipt, type EvaluationRequest,
+  type MemoryDetail, type MemorySummary, type MemoryRetrievalReceipt, type Overview, type WorkspaceStatus, type CandidateReceipt, type EvaluationRequest,
   type MemoryMutationReceipt, type ReviewReceipt, type ScreeningReceipt,
 } from "../../src/contracts/dashboard";
 
@@ -72,6 +72,7 @@ export const getCandidates = (): Promise<CandidateSummary[]> => stashQuery("/v1/
 export const getCandidate = (id: string): Promise<CandidateSummary> => stashQuery(`/v1/candidates/${id}`, candidateSummarySchema);
 export const getMemories = (): Promise<MemorySummary[]> => stashQuery("/v1/memory", memorySummarySchema.array());
 export const getMemory = (id: string): Promise<MemoryDetail> => stashQuery(`/v1/memory/${id}`, memoryDetailSchema);
+export const searchMemory = (input: { namespaceId: string; agentId: string; query: string; purpose: string }): Promise<MemoryRetrievalReceipt> => stashMutation("/v1/memory/search", input, memoryRetrievalReceiptSchema);
 export const getEvaluations = (signal?: AbortSignal): Promise<EvaluationSummary[]> => stashQuery("/v1/evaluations", evaluationSummarySchema.array(), signal);
 export const getEvaluation = (id: string, signal?: AbortSignal): Promise<EvaluationDetail> => stashQuery(`/v1/evaluations/${id}`, evaluationDetailSchema, signal);
 export const getAgents = (): Promise<Agent[]> => stashQuery("/v1/agents", agentSchema.array());

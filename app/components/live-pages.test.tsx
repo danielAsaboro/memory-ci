@@ -44,7 +44,7 @@ function installResponses(overrides: Record<string, Response> = {}) {
     "/api/stash/v1/evaluations": [],
     "/api/stash/v1/agents": [],
     "/api/stash/v1/audit": [],
-    "/api/stash/v1/workspace/status": { workspace: { id: ids.workspace, name: "Mosaic Operations" }, namespaceCount: 1, integrations: { cockroach: { state: "ready", detail: "Connected" }, aws: { state: "pending", detail: "Receipt pending" }, agent: { state: "ready", detail: "Registered" } } },
+    "/api/stash/v1/workspace/status": { workspace: { id: ids.workspace, name: "Mosaic Operations" }, namespaceCount: 1, namespaces: [{ id: ids.namespace, name: "claims.east" }], integrations: { cockroach: { state: "ready", detail: "Connected" }, aws: { state: "pending", detail: "Receipt pending" }, agent: { state: "ready", detail: "Registered" } } },
   };
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : input.toString();
@@ -62,6 +62,9 @@ describe("live product pages", () => {
     const { container } = render(<LiveProvider><OverviewPage /></LiveProvider>);
 
     expect(await screen.findByRole("heading", { name: "Mosaic Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Ship trusted memory to agents/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Run agent retrieval/i })).toHaveAttribute("href", "/memory");
+    expect(screen.getByRole("link", { name: /Inspect production proof/i })).toHaveAttribute("href", "/settings");
     expect(screen.getByText("19")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/Sandbox|fixture|cloud proof pending|Amina|r12|chg-threshold-150|chg-gift-card-poison|chg-tone-preference/i);
@@ -93,11 +96,21 @@ describe("live product pages", () => {
   });
 
   it("does not mark a degraded provider as healthy", async () => {
-    installResponses({ "/api/stash/v1/workspace/status": new Response(JSON.stringify({ workspace: { id: ids.workspace, name: "Mosaic Operations" }, namespaceCount: 1, integrations: { cockroach: { state: "unavailable", detail: "Connection unavailable" }, aws: { state: "blocked", detail: "Credentials required" }, agent: { state: "pending", detail: "Waiting" } } }), { headers: { "content-type": "application/json" } }) });
+    installResponses({ "/api/stash/v1/workspace/status": new Response(JSON.stringify({ workspace: { id: ids.workspace, name: "Mosaic Operations" }, namespaceCount: 1, namespaces: [{ id: ids.namespace, name: "claims.east" }], integrations: { cockroach: { state: "unavailable", detail: "Connection unavailable" }, aws: { state: "blocked", detail: "Credentials required" }, agent: { state: "pending", detail: "Waiting" } } }), { headers: { "content-type": "application/json" } }) });
     render(<><LiveProvider><SettingsPage /></LiveProvider><LiveProvider><OnboardingPage /></LiveProvider></>);
     expect(await screen.findByText("Provider attention required")).toBeInTheDocument();
     expect(screen.getByText("unavailable")).not.toHaveClass("low");
     expect(screen.getByText("blocked")).not.toHaveClass("low");
+  });
+
+  it("shows judges a downloadable production and vector verification receipt", async () => {
+    installResponses();
+    render(<LiveProvider><SettingsPage /></LiveProvider>);
+
+    expect(await screen.findByRole("heading", { name: "Production verification receipt" })).toBeInTheDocument();
+    expect(screen.getByText("VECTOR(1024)")).toBeInTheDocument();
+    expect(screen.getByText(/AWS · us-east-1 · BASIC · CREATED/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Inspect redacted receipt/i })).toHaveAttribute("href", "/evidence/stash-production.json");
   });
 
   it("renders live agents factually", async () => {

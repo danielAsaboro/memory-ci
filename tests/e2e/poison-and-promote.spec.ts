@@ -19,7 +19,7 @@ const e2ePrivateKey = createPrivateKey(`-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQY
 
 async function propose(page: Page, input: { namespaceId: string; canonicalText: string; trustClass: "untrusted" | "observed" | "authenticated"; sourceContent: string; sign?: boolean }) {
   await page.getByRole("button", { name: "Propose memory" }).click();
-  await page.getByLabel("Namespace ID").fill(input.namespaceId);
+  await expect(page.getByLabel("Namespace ID")).toHaveValue(input.namespaceId);
   await page.getByLabel("Memory class").selectOption("fact");
   await page.getByLabel("Trust class").selectOption(input.trustClass);
   await page.getByLabel("Canonical text").fill(input.canonicalText);
@@ -62,7 +62,7 @@ test("does not approve an authenticated proposal when its signed source is tampe
   const [starter] = await candidatesFromServer(page);
   const runId = `${testInfo.project.name}-${Date.now()}`;
   await page.getByRole("button", { name: "Propose memory" }).click();
-  await page.getByLabel("Namespace ID").fill(starter!.namespaceId);
+  await expect(page.getByLabel("Namespace ID")).toHaveValue(starter!.namespaceId);
   await page.getByLabel("Memory class").selectOption("fact");
   await page.getByLabel("Trust class").selectOption("authenticated");
   await page.getByLabel("Canonical text").fill(`Tamper-resistant threshold ${runId}`);

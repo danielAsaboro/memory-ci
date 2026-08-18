@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "verified": true,
+  "generatedAt": "2026-08-17T18:38:41.216Z",
+  "cockroachCloud": {
+    "provider": "AWS",
+    "region": "us-east-1",
+    "tier": "BASIC",
+    "state": "CREATED"
+  },
+  "vector": {
+    "columnType": "VECTOR(1024)",
+    "indexName": "memory_versions_active_embedding_idx",
+    "ready": true,
+    "visible": true,
+    "selectedByExplain": true,
+    "jobStatus": "succeeded"
+  },
+  "aws": {
+    "stack": "stash-production",
+    "stackStatus": "UPDATE_COMPLETE",
+    "embeddingModelId": "amazon.titan-embed-text-v2:0",
+    "evaluatorModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "bedrockProviderRequestIdsRecorded": true,
+    "s3VersionedArtifactRecorded": true,
+    "eventBridgeReceiptRecorded": true
+  },
+  "source": "Redacted from docs/evidence/stash-production.json"
+}

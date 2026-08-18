@@ -29,6 +29,11 @@ export const workspaceSchema = z.object({
   name: z.string().min(1).max(255),
 }).strict();
 
+export const namespaceSchema = z.object({
+  id: identifierSchema,
+  name: z.string().min(1).max(255),
+}).strict();
+
 export const overviewMetricsSchema = z.object({
   agents: z.number().int().nonnegative(),
   activeMemories: z.number().int().nonnegative(),
@@ -141,6 +146,7 @@ export const auditEventSchema = z.object({
 export const workspaceStatusSchema = z.object({
   workspace: workspaceSchema,
   namespaceCount: z.number().int().nonnegative(),
+  namespaces: z.array(namespaceSchema),
   integrations: integrationsSchema,
 }).strict();
 
@@ -168,6 +174,24 @@ export const memoryMutationReceiptSchema = z.object({
   memoryVersionId: identifierSchema, lineageId: identifierSchema, candidateId: identifierSchema,
   revision: z.number().int().positive(), version: z.number().int().positive(), active: z.boolean(),
 }).strict();
+export const memoryRetrievalReceiptSchema = z.object({
+  namespaceId: identifierSchema,
+  revision: z.number().int().nonnegative(),
+  readReceiptId: identifierSchema,
+  memories: z.array(z.object({
+    id: identifierSchema,
+    namespaceId: identifierSchema,
+    lineageId: identifierSchema,
+    candidateId: identifierSchema,
+    version: z.number().int().positive(),
+    revision: z.number().int().positive(),
+    active: z.boolean(),
+    canonicalPayload: z.record(z.string(), z.unknown()),
+    contentDigest: z.string().min(1).max(128),
+    validFrom: timestampSchema,
+    validUntil: nullableTimestampSchema,
+  }).strict()),
+}).strict();
 
 export type Identifier = z.infer<typeof identifierSchema>;
 export type Timestamp = z.infer<typeof timestampSchema>;
@@ -186,6 +210,7 @@ export type Agent = z.infer<typeof agentSchema>;
 export type MemorySummary = z.infer<typeof memorySummarySchema>;
 export type Lineage = z.infer<typeof lineageSchema>;
 export type MemoryDetail = z.infer<typeof memoryDetailSchema>;
+export type MemoryRetrievalReceipt = z.infer<typeof memoryRetrievalReceiptSchema>;
 export type CandidateSummary = z.infer<typeof candidateSummarySchema>;
 export type EvaluationSummary = z.infer<typeof evaluationSummarySchema>;
 export type EvaluationResult = z.infer<typeof evaluationResultSchema>;

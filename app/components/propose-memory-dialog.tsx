@@ -15,9 +15,9 @@ async function digest(text: string) {
   return [...new Uint8Array(result)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+export function ProposeMemoryDialog({ workspaceId, namespaceId, namespaceName, onClose }: { workspaceId: string; namespaceId: string; namespaceName: string; onClose: () => void }) {
   const client = useQueryClient();
-  const [form, setForm] = useState(initial);
+  const [form, setForm] = useState<Form>(() => ({ ...initial, namespaceId }));
   const key = useRef<string | null>(null);
   const fingerprint = useRef<string | null>(null);
   const sourceId = useRef<string | null>(null);
@@ -48,7 +48,7 @@ export function ProposeMemoryDialog({ workspaceId, onClose }: { workspaceId: str
   const error = mutation.error as StashApiError | null;
   return <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="propose-memory-title"><form className="confirm-dialog" onSubmit={(event) => { event.preventDefault(); if (valid) mutation.mutate(); }}>
     <button type="button" className="dialog-close" onClick={onClose} aria-label="Close proposal">×</button><h3 id="propose-memory-title">Propose memory</h3>
-    <label>Namespace ID<input aria-label="Namespace ID" value={form.namespaceId} onChange={change("namespaceId")} required /></label>
+    <label>Namespace <small>{namespaceName}</small><input aria-label="Namespace ID" value={form.namespaceId} readOnly /></label>
     <label>Memory class<select aria-label="Memory class" value={form.memoryClass} onChange={change("memoryClass")}>{["policy", "fact", "preference", "episode", "skill", "constraint"].map((value) => <option key={value}>{value}</option>)}</select></label>
     <label>Trust class<select aria-label="Trust class" value={form.trustClass} onChange={change("trustClass")}>{["untrusted", "observed", "authenticated", "authoritative"].map((value) => <option key={value}>{value}</option>)}</select></label>
     <label>Canonical text<textarea aria-label="Canonical text" value={form.canonicalText} onChange={change("canonicalText")} required /></label>

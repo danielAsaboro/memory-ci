@@ -7,7 +7,7 @@ import type { MemoryVersion, TenantContext } from "../domain/types";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embedding-provider";
 
 export type MemoryRetrieval = Readonly<{
-  namespaceId: string; revision: number; memories: readonly MemoryVersion[];
+  namespaceId: string; revision: number; readReceiptId: string; memories: readonly MemoryVersion[];
 }>;
 
 export async function retrieveActiveMemory(
@@ -28,12 +28,13 @@ export async function retrieveActiveMemory(
   const memories = input.revision === undefined
     ? await new MemoryRepository(transaction).searchActiveSemantic(input.namespaceId, await embeddings.embed(input.query), 10)
     : await new MemoryRepository(transaction).getActiveAtRevision(input.namespaceId, revision);
+  const readReceiptId = randomUUID();
   await transaction.client.query(
     `INSERT INTO memory_reads
      (tenant_id,id,namespace_id,principal_id,revision,query_digest,returned_version_ids,purpose)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [transaction.tenantId, randomUUID(), input.namespaceId, context.principalId, revision,
+    [transaction.tenantId, readReceiptId, input.namespaceId, context.principalId, revision,
       createHash("sha256").update(input.query).digest("hex"), memories.map((memory) => memory.id), input.purpose],
   );
-  return { namespaceId: input.namespaceId, revision, memories };
+  return { namespaceId: input.namespaceId, revision, readReceiptId, memories };
 }
