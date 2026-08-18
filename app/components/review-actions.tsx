@@ -10,6 +10,7 @@ import { retryFingerprint } from "../lib/retry-fingerprint";
 
 const terminal = new Set(["passed", "regressed", "inconclusive", "failed"]);
 const delays = [1_000, 2_000, 4_000] as const;
+const evaluationNotice = (evaluation: EvaluationSummary) => `Evaluation ${evaluation.status[0]!.toUpperCase()}${evaluation.status.slice(1)}${evaluation.providerRequestId ? `; provider request ${evaluation.providerRequestId}` : ""}.`;
 const errorNotice = (error: unknown, fallback: string) => error instanceof StashApiError
   ? `${error.message} Request ID: ${error.requestId}.`
   : error instanceof Error ? error.message : fallback;
@@ -47,6 +48,8 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
   const effectiveEvaluationId = awaitingNewEvaluation ? evaluationId : authoritativeEvaluationId ?? evaluationId;
   const currentEvidence = awaitingNewEvaluation ? (polled?.id === effectiveEvaluationId ? polled : null) : authoritativeEvaluation ?? (polled?.id === effectiveEvaluationId ? polled : null);
   const currentEvidenceStatus = currentEvidence?.status;
+  const authoritativeRequestNotice = evaluationRequest && authoritativeEvaluation?.triggerEventId === evaluationRequest.eventId && terminal.has(authoritativeEvaluation.status)
+    ? evaluationNotice(authoritativeEvaluation) : null;
   const reviewId = candidate.latestApprovedReviewId && candidate.latestApprovedReviewId !== staleReviewId ? candidate.latestApprovedReviewId : submittedReviewId;
   const blocked = Boolean(forcedBlocked) || candidate.state === "quarantined" || candidate.blockingFindingCount > 0 || !currentEvidence || currentEvidence.status !== "passed" || !currentEvidence.completedAt;
   const screen = useMutation({ mutationFn: () => screenCandidate(candidate.id, idempotencyKey(screenKey)), onSuccess: async (receipt) => { setNotice(`Screened ${receipt.candidateId}: ${receipt.state}.`); await invalidate(); }, onError: (error) => setNotice(errorNotice(error, "Screening is unavailable.")) });
@@ -87,7 +90,7 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
       if (Date.now() >= deadline) { expire(); return; }
       if (!effectiveEvaluationId) { const found = (await getEvaluations(controller.signal)).find((item) => item.candidateId === candidate.id && item.triggerEventId === evaluationRequest?.eventId); if (!active || controller.signal.aborted) return; if (found) { if (pollDeadline.current === activeDeadline) activeDeadline.evaluationId = found.id; setEvaluationId(found.id); return; } schedule(delays[attempt++] ?? 5_000); return; }
       const result = await getEvaluation(effectiveEvaluationId, controller.signal); if (!active || controller.signal.aborted || Date.now() >= deadline) return; setPolled(result);
-      if (terminal.has(result.status)) { setEvaluationRequest(null); setNotice(`Evaluation ${result.status[0]!.toUpperCase()}${result.status.slice(1)}${result.providerRequestId ? `; provider request ${result.providerRequestId}` : ""}.`); pollDeadline.current = null; settle(); await invalidate(); return; }
+      if (terminal.has(result.status)) { setEvaluationRequest(null); setNotice(evaluationNotice(result)); pollDeadline.current = null; settle(); await invalidate(); return; }
       schedule(delays[attempt++] ?? 5_000);
     } catch (error) { if (active && !controller.signal.aborted) { if (pollDeadline.current === activeDeadline) pollDeadline.current = null; settle(); setNotice(errorNotice(error, "Evaluation progress is unavailable. Refresh to retry.")); } } };
     schedule(delays[attempt++] ?? 1_000); return settle;
@@ -95,7 +98,7 @@ function LiveReviewActions({ workspaceId, candidate, evaluation, blocked: forced
   const evaluationPropIsAuthoritative = candidate.latestEvaluationId ? evaluation?.id === candidate.latestEvaluationId : !evaluation;
   const runAvailable = candidate.state === "evaluating" && evaluationPropIsAuthoritative && !evaluate.isPending && !evaluate.isSuccess && !["pending", "running"].includes(currentEvidence?.status ?? "");
   const canReview = candidate.state === "review_required" && Boolean(currentEvidence);
-  return <section className="review-actions"><div><strong>{blocked ? "Promotion blocked" : "Evaluation evidence passed"}</strong><small>{blocked ? "Approval requires passed, current, non-quarantined evidence." : "Review is bound to the completed evaluation run."}</small>{notice ? <small role="status">{notice}</small> : null}</div>
+  return <section className="review-actions"><div><strong>{blocked ? "Promotion blocked" : "Evaluation evidence passed"}</strong><small>{blocked ? "Approval requires passed, current, non-quarantined evidence." : "Review is bound to the completed evaluation run."}</small>{authoritativeRequestNotice ?? notice ? <small role="status">{authoritativeRequestNotice ?? notice}</small> : null}</div>
     {candidate.state === "proposed" ? <button className="button primary" onClick={() => screen.mutate()} disabled={screen.isPending}>Screen candidate</button> : null}
     {runAvailable ? <button className="button primary" onClick={() => evaluate.mutate()} disabled={evaluate.isPending}><Play size={14} />Run evaluation</button> : null}
     <label>Review reason<input aria-label="Review reason" value={reason} onChange={(event) => setReason(event.target.value)} /></label>

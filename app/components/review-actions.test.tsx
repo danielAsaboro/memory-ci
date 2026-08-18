@@ -42,6 +42,34 @@ describe("ReviewActions", () => {
     expect(screen.getByText(/Promotion blocked/i)).toBeInTheDocument();
   });
 
+  it("replaces the queued notice when refreshed evidence is already terminal", async () => {
+    const eventId = "88888888-8888-4888-8888-888888888888";
+    const terminalEvaluation = {
+      ...evaluation,
+      id: "99999999-9999-4999-8999-999999999999",
+      status: "inconclusive" as const,
+      providerRequestId: "provider-timeout",
+      triggerEventId: eventId,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      candidateId: candidate.id,
+      status: "queued",
+      eventId,
+    }), { status: 202, headers: { "content-type": "application/json" } })));
+    const view = renderActions({ candidate: { ...candidate, state: "evaluating" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByRole("status")).toHaveTextContent("Evaluation queued");
+
+    view.rerenderActions({
+      candidate: { ...candidate, state: "quarantined", latestEvaluationId: terminalEvaluation.id },
+      evaluation: terminalEvaluation,
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Evaluation Inconclusive; provider request provider-timeout.");
+  });
+
   it("does not enqueue another evaluation when refreshed evidence is already running", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
