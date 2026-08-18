@@ -70,6 +70,40 @@ describe("ReviewActions", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Evaluation Inconclusive; provider request provider-timeout.");
   });
 
+  it("lets a completed review replace a fast terminal evaluation notice", async () => {
+    const eventId = "88888888-8888-4888-8888-888888888888";
+    const terminalEvaluation = {
+      ...evaluation,
+      id: "99999999-9999-4999-8999-999999999999",
+      triggerEventId: eventId,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidateId: candidate.id, status: "queued", eventId }), { status: 202, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        reviewId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        candidateId: candidate.id,
+        decision: "approved",
+        evaluationRunId: terminalEvaluation.id,
+        baselineRevision: 4,
+        policyVersion: "policy-v1",
+      }), { status: 202, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const view = renderActions({ candidate: { ...candidate, state: "evaluating" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    view.rerenderActions({
+      candidate: { ...candidate, state: "review_required", latestEvaluationId: terminalEvaluation.id },
+      evaluation: terminalEvaluation,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Evaluation Passed");
+
+    fireEvent.change(screen.getByLabelText("Review reason"), { target: { value: "Evidence accepted" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Review approved"));
+  });
+
   it("does not enqueue another evaluation when refreshed evidence is already running", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
