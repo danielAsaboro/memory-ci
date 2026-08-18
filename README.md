@@ -34,7 +34,7 @@ The submission uses **CockroachDB Distributed Vector Indexing**, the **ccloud CL
 - **Secrets Manager, CloudWatch, X-Ray, and Cognito** provide secret delivery, retained observations, tracing, and production identity infrastructure.
 - **Vercel** serves the reviewer console and its signed, HTTP-only same-origin session gateway at `trystash.xyz`.
 
-See [docs/architecture.md](docs/architecture.md) for the trust boundaries and release protocol.
+See the Mintlify [architecture and trust boundaries](docs/concepts/architecture.mdx) page for the release protocol.
 
 ## Run locally
 
