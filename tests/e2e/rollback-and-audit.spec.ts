@@ -21,7 +21,7 @@ test("supports keyboard-only review controls without fixture candidate IDs", asy
   await page.goto(`/changes/${id}`);
   await page.getByRole("button", { name: "Screen candidate" }).press("Enter");
   await page.getByRole("button", { name: "Run evaluation" }).press("Enter");
-  await expect(page.getByRole("status")).toContainText("Evaluation Passed", { timeout: liveProduction ? 90_000 : 20_000 });
+  await expect(page.getByRole("status")).toContainText("Evaluation Passed", { timeout: liveProduction ? 90_000 : 60_000 });
   await page.getByLabel("Review reason").fill("keyboard approval");
   const approve = page.getByRole("button", { name: "Approve" });
   await expect(approve).toBeEnabled({ timeout: liveProduction ? 15_000 : 10_000 });

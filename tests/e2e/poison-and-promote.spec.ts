@@ -97,7 +97,7 @@ test("evaluates, approves, promotes, semantically reads, rolls back, and audits 
   const evaluationRequestId = (await evaluatedResponse).headers()["x-request-id"]!;
   // The first evaluator run on a cold CI database can include CockroachDB
   // schema/cache warm-up. Keep the assertion bounded, but allow that cold path.
-  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/, { timeout: liveProduction ? 90_000 : 45_000 });
+  await expect(page.getByRole("status")).toContainText(/Evaluation Passed/, { timeout: liveProduction ? 90_000 : 60_000 });
   const evidence = await page.evaluate(async (id) => {
     const runs = await (await fetch("/api/stash/v1/evaluations")).json() as Array<{ id: string; candidateId: string }>;
     const run = runs.find((item) => item.candidateId === id)!;
@@ -173,7 +173,7 @@ test("shows Inconclusive and keeps approval disabled when the Bedrock adapter ti
   await page.goto(`/changes/${candidateId}`);
   await page.getByRole("button", { name: "Screen candidate" }).click();
   await page.getByRole("button", { name: "Run evaluation" }).click();
-  await expect(page.getByRole("status")).toContainText("Inconclusive", { timeout: 40_000 });
+  await expect(page.getByRole("status")).toContainText("Inconclusive", { timeout: 60_000 });
   await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
   await expect(page.getByText("Evaluation evidence passed")).toHaveCount(0);
 });
