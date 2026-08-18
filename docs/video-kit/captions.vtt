@@ -1,22 +1,145 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:15.000
-Agents do not just read data. They accumulate durable instructions that change every future action. One poisoned memory can quietly compromise the whole system. Stash makes production memory ship like code.
+00:00:00.000 --> 00:00:03.500
+Agents do not just read data.
 
-00:00:15.000 --> 00:00:40.000
-This proposal tries to override prior instructions and redirect refunds to gift cards. Stash records its provenance, screens the exact content, returns two blocking findings, and quarantines it. The candidate never becomes active, so retrieval cannot serve it to an agent.
+00:00:03.500 --> 00:00:07.500
+They accumulate durable instructions
+that change every future action.
 
-00:00:40.000 --> 00:01:18.000
-Now a legitimate policy update enters the same pipeline. Deterministic checks run first. A recorded scenario compares baseline behavior with the candidate overlay, while Amazon Bedrock is restricted to a structured judgment. The completed run carries a provider request ID. Approval binds the content digest, evaluation, policy, and baseline—not just a human click.
+00:00:07.500 --> 00:00:11.500
+One poisoned memory can quietly
+compromise the whole system.
 
-00:01:18.000 --> 00:01:43.000
-Promotion is one serializable CockroachDB transaction. It rejects stale evidence, supersedes the previous version, activates the new memory, advances the namespace revision, appends the audit record, and writes the outbox event. The operational state and its vector cannot drift apart.
+00:00:11.500 --> 00:00:15.000
+Stash makes production memory
+ship like code.
 
-00:01:43.000 --> 00:02:10.000
-This is persistent memory, not a keyword demo. Bedrock produces a 1,024-dimensional embedding, CockroachDB's distributed vector index searches only active memory in the tenant and namespace, and Stash persists what the agent read. Transactional truth and semantic retrieval share one consistency boundary.
+00:00:15.000 --> 00:00:19.000
+This proposal tries to override
+prior instructions
 
-00:02:10.000 --> 00:02:29.000
-The build uses CockroachDB Distributed Vector Indexing, the ccloud CLI for live cluster evidence, and CockroachDB Agent Skills during implementation review. It runs on AWS with Bedrock, Lambda, API Gateway, S3, and EventBridge. The public redacted receipt correlates the live provider and database evidence.
+00:00:19.000 --> 00:00:23.000
+and redirect refunds to gift cards.
 
-00:02:29.000 --> 00:02:45.000
-Rollback does not erase history. It creates another reviewed forward revision and preserves the audit chain. Stash governs what agents are allowed to remember—and gives every change evidence, lineage, and a safe way back.
+00:00:23.000 --> 00:00:27.000
+Stash records its provenance,
+screens the exact content,
+
+00:00:27.000 --> 00:00:31.000
+returns two blocking findings,
+and quarantines it.
+
+00:00:31.000 --> 00:00:35.000
+The candidate never becomes active,
+
+00:00:35.000 --> 00:00:40.000
+so retrieval cannot serve it to an agent.
+
+00:00:40.000 --> 00:00:44.000
+Now a legitimate policy update
+enters the same pipeline.
+
+00:00:44.000 --> 00:00:48.000
+Deterministic checks run first.
+
+00:00:48.000 --> 00:00:51.000
+A recorded scenario compares
+baseline behavior
+
+00:00:51.000 --> 00:00:54.000
+with the candidate overlay,
+
+00:00:54.000 --> 00:01:00.000
+while Amazon Bedrock is restricted
+to a structured judgment.
+
+00:01:00.000 --> 00:01:05.000
+The completed run carries
+a provider request ID.
+
+00:01:05.000 --> 00:01:11.000
+Approval binds the content digest,
+evaluation, policy,
+
+00:01:11.000 --> 00:01:18.000
+and baseline—not just a human click.
+
+00:01:18.000 --> 00:01:22.500
+Promotion is one serializable
+CockroachDB transaction.
+
+00:01:22.500 --> 00:01:27.500
+It rejects stale evidence,
+supersedes the previous version,
+
+00:01:27.500 --> 00:01:32.500
+activates the new memory,
+advances the namespace revision,
+
+00:01:32.500 --> 00:01:38.000
+appends the audit record,
+and writes the outbox event.
+
+00:01:38.000 --> 00:01:43.000
+The operational state and its vector
+cannot drift apart.
+
+00:01:43.000 --> 00:01:47.000
+This is persistent memory,
+not a keyword demo.
+
+00:01:47.000 --> 00:01:52.000
+Bedrock produces a
+1,024-dimensional embedding,
+
+00:01:52.000 --> 00:01:57.000
+CockroachDB's distributed vector index
+searches only active memory
+
+00:01:57.000 --> 00:02:01.500
+in the tenant and namespace,
+and Stash persists what the agent read.
+
+00:02:01.500 --> 00:02:06.000
+Transactional truth and semantic retrieval
+
+00:02:06.000 --> 00:02:10.000
+share one consistency boundary.
+
+00:02:10.000 --> 00:02:13.500
+The build uses CockroachDB
+Distributed Vector Indexing,
+
+00:02:13.500 --> 00:02:17.000
+the ccloud CLI for live cluster evidence,
+
+00:02:17.000 --> 00:02:20.500
+and CockroachDB Agent Skills
+during implementation review.
+
+00:02:20.500 --> 00:02:24.500
+It runs on AWS with Bedrock, Lambda,
+API Gateway, S3, and EventBridge.
+
+00:02:24.500 --> 00:02:29.000
+The public redacted receipt correlates
+the live provider and database evidence.
+
+00:02:29.000 --> 00:02:33.000
+Rollback does not erase history.
+
+00:02:33.000 --> 00:02:36.500
+It creates another reviewed
+forward revision
+
+00:02:36.500 --> 00:02:40.000
+and preserves the audit chain.
+
+00:02:40.000 --> 00:02:42.500
+Stash governs what agents
+are allowed to remember—and
+
+00:02:42.500 --> 00:02:45.000
+gives every change evidence,
+lineage, and a safe way back.

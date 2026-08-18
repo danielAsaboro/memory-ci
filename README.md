@@ -6,6 +6,17 @@ Stash is a production release control plane for AI-agent memory. Teams propose d
 
 Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/).
 
+![Stash production workspace overview](docs/video-kit/captures/01-overview.jpg)
+
+## Judge quick path
+
+1. Open [trystash.xyz](https://trystash.xyz) and start at **Onboarding**.
+2. Inspect a [poisoned proposal stopped before activation](docs/video-kit/captures/02-quarantined-change.jpg), then a [passed behavioral evaluation with its provider receipt](docs/video-kit/captures/05-evaluations.jpg).
+3. Run semantic retrieval in **Memory Explorer** and confirm the active revision plus persisted read receipt.
+4. Review the redacted [production evidence receipt](docs/evidence/stash-production.json) and the [architecture and trust boundaries](docs/concepts/architecture.mdx).
+
+The under-three-minute recording handoff is complete in [docs/video-kit](docs/video-kit/README.md). No rendered video is stored in this repository; its public URL is added only after the user records and uploads the final cut.
+
 ## Live product
 
 - Application: [trystash.xyz](https://trystash.xyz)
@@ -24,6 +35,17 @@ Stash keeps the operational release graph and semantic index in one serializable
 - production identity and index readiness independently verified with the agent-ready `ccloud` CLI.
 
 The submission uses **CockroachDB Distributed Vector Indexing**, the **ccloud CLI**, and the **CockroachDB Agent Skills Repo**. The official skills informed schema, transaction, privilege, operational-health, and audit review.
+
+```mermaid
+flowchart LR
+    Judge["Reviewer / judge"] --> Vercel["Vercel console + signed session gateway"]
+    Vercel --> API["API Gateway + Lambda"]
+    API --> CRDB["CockroachDB Cloud<br/>release graph + VECTOR(1024)"]
+    API --> S3["S3 evidence artifacts"]
+    API --> Bedrock["Bedrock judgment + embeddings"]
+    CRDB --> Outbox["Transactional outbox"]
+    Outbox --> Events["EventBridge lifecycle events"]
+```
 
 ## AWS and Vercel
 

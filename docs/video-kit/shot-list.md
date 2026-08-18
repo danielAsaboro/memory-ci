@@ -8,7 +8,7 @@ Target export: 1920×1080, 30 fps, 2:45 target, 2:55 absolute editorial ceiling.
 - Create a fresh workspace and confirm the namespace is prefilled in the proposal form.
 - Seed one safe baseline with two versions so forward rollback is visible.
 - Confirm the semantic retrieval UI returns an active memory and writes a read receipt.
-- Confirm the live evaluation queue is healthy; a one-minute wait must be cut down in editing.
+- Confirm the live evaluation queue reaches a terminal result; trim provider wait time in the edit instead of implying an instant response.
 - Prepare sanitized terminal output for the vector column, index definition, index job, `EXPLAIN`, and `ccloud` cluster JSON.
 - Open `docs/evidence/stash-production.json` with account identifiers redacted.
 - Hide bookmarks, notifications, credentials, AWS account IDs, tokens, cookies, and private URLs.
@@ -37,7 +37,7 @@ Target export: 1920×1080, 30 fps, 2:45 target, 2:55 absolute editorial ceiling.
 ## Final user-owned checks
 
 - Export duration is below `180.0` seconds.
-- Captions match the final spoken edit.
+- Captions match the final spoken edit; retime `captions.vtt` if delivery or cuts change.
 - The video visibly identifies at least two qualifying CockroachDB tools and at least one AWS service.
 - The public repository and `https://trystash.xyz` are readable before the close.
 - Upload to public YouTube or Vimeo and test the URL while logged out.

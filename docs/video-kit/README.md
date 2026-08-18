@@ -6,7 +6,7 @@ This folder is a pre-production handoff. It does **not** contain a rendered vide
 
 - `stash-devpost-script.md` — canonical 2:45 narration and visual directions.
 - `shot-list.md` — exact recording order, capture requirements, and editing notes.
-- `captions.vtt` — timed caption draft matching the narration.
+- `captions.vtt` — readable timed cues matching the canonical narration word-for-word.
 - `stash-thumbnail-source.png` — existing Stash social artwork, copied as the thumbnail source.
 - `captures/*.jpg` — independently captured stills from the live production workspace on 2026-08-18.
 
@@ -23,7 +23,11 @@ This folder is a pre-production handoff. It does **not** contain a rendered vide
 | `07-settings.jpg` | Runtime/configuration status |
 | `08-onboarding.jpg` | CockroachDB and AWS setup explanation |
 
-These stills are evidence and editing references, not substitutes for recording the actual lifecycle. Before recording, implement the namespace-ID and semantic-retrieval fixes in the remediation plan so the footage is reproducible without hidden knowledge.
+These stills are evidence and editing references, not substitutes for recording the actual lifecycle. The current product prefills the workspace namespace in proposals and exposes semantic retrieval with a persisted read receipt in Memory Explorer. Re-run the preflight checks in `shot-list.md` immediately before recording because production data and provider health can still change.
+
+## Handoff status
+
+The script, recording order, stills, thumbnail source, and captions are ready for recording. The only intentionally absent artifact is the rendered video. After the user records and uploads the final cut, add its public YouTube or Vimeo URL to the repository and Devpost submission.
 
 ## User-owned final steps
 
