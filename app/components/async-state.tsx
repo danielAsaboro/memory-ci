@@ -14,7 +14,7 @@ export function WorkspaceBoundary({ children }: { children: (workspaceId: string
 }
 
 export function AsyncSkeleton({ label = "Loading live workspace data" }: { label?: string }) {
-  return <section className="empty-panel" aria-busy="true" aria-live="polite"><div className="spin" aria-hidden="true"><RefreshCw /></div><h2>{label}</h2><p>The console is waiting for a verified response.</p></section>;
+  return <section className="empty-panel" aria-busy="true" aria-live="polite"><div className="spin" aria-hidden="true"><RefreshCw size={18} /></div><h2>{label}</h2><p>The console is waiting for a verified response.</p></section>;
 }
 
 export function EmptyState({ title, detail, action }: { title: string; detail: string; action?: ReactNode }) {

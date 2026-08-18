@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "./components/app-shell";
 import { DataProvider } from "./lib/query-client";
@@ -25,14 +25,20 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Stash — ship agent memory like code",
     description: "Pull requests, behavioral evaluation, atomic promotion, lineage, and rollback for production agent memory.",
-    images: [{ url: "/stash-social.png", width: 1731, height: 909, alt: "A governed agent-memory release path with a quarantined branch" }],
+    images: [{ url: "/stash-social-v2.png", width: 1200, height: 630, alt: "Stash release control for production AI-agent memory" }],
   },
-  twitter: { card: "summary_large_image", images: ["/stash-social.png"] },
+  twitter: { card: "summary_large_image", images: ["/stash-social-v2.png"] },
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+    ],
     shortcut: "/favicon.svg",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
+
+export const viewport: Viewport = { themeColor: "#100d10" };
 
 export default function RootLayout({
   children,
