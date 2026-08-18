@@ -1,0 +1,91 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Stash",
+  "description": "Release control for durable AI-agent memory",
+  "colors": {
+    "primary": "#e24b72",
+    "light": "#f06c8e",
+    "dark": "#bd3459"
+  },
+  "favicon": "/images/favicon.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "background": {
+    "decoration": "gradient",
+    "color": {
+      "light": "#fff9f7",
+      "dark": "#100d10"
+    }
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs",
+    "codeblocks": "system"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": ["index", "quickstart", "tutorials/first-release"]
+      },
+      {
+        "group": "Understand Stash",
+        "pages": [
+          "concepts/architecture",
+          "concepts/release-lifecycle",
+          "concepts/why-cockroachdb",
+          "concepts/security-model"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/review-change",
+          "guides/rollback-lineage",
+          "guides/inspect-audit",
+          "guides/deploy-production"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/http-api",
+          "reference/configuration",
+          "reference/lifecycle-states",
+          "reference/commands",
+          "reference/repository-map"
+        ]
+      },
+      {
+        "group": "Evidence",
+        "pages": [
+          "evidence/production",
+          "evidence/competitive-differentiation"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/danielAsaboro/stash-cockcroachdb"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Open Stash",
+      "href": "https://trystash.xyz"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/danielAsaboro/stash-cockcroachdb",
+      "website": "https://trystash.xyz"
+    }
+  }
+}

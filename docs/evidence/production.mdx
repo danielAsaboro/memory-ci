@@ -1,0 +1,52 @@
+---
+title: Production evidence
+description: What the redacted Stash cloud receipt observed, how it is correlated, and where its proof boundary ends.
+icon: badge-check
+---
+
+The repository contains a redacted, machine-validated production receipt generated at `2026-08-17T18:38:41.216Z`. It records one correlated observation run across CockroachDB Cloud and the deployed AWS stack.
+
+<Card title="Open the raw receipt" icon="file-json" href="/evidence/stash-production.json">
+  Inspect the redacted JSON used by the production audit.
+</Card>
+
+## Observed proof
+
+| Receipt field | Observation |
+| --- | --- |
+| `verified` | The evidence composer accepted every required correlation and set the result to `true`. |
+| `stack` | CloudFormation reported stack `stash-production` in `UPDATE_COMPLETE`. |
+| `smoke.health` | The deployed API returned an `ok` health receipt and request ID. |
+| `smoke.workspace` | Repeating the same bootstrap produced the same tenant and principal identities, demonstrating idempotent workspace creation for that run. |
+| `smoke.bedrock.evaluator` | Bedrock returned a provider request ID for the configured evaluator model. |
+| `smoke.bedrock.embedding` | Bedrock returned a provider request ID, 1024 dimensions, and a content digest for the embedding probe. |
+| `smoke.s3` | S3 returned a provider request ID, version ID, key, digest, and ETag for the content-addressed evidence artifact. |
+| `smoke.eventBridge` | EventBridge returned a provider request ID and event ID. |
+| `vector.vector` | CockroachDB reported `VECTOR(1024)`, index `memory_versions_active_embedding_idx`, ready and visible state, a succeeded job, and an `EXPLAIN` plan naming the index. |
+| `ccloud.ccloud` | CockroachDB Cloud tooling reported the expected cluster identity, AWS provider, `us-east-1` region, Basic tier, host, and `CREATED` state. |
+| `cloudWatch`, `xray`, `serviceEventId` | Correlated service observations recorded the run through logs, trace identity, and lifecycle event delivery. |
+
+The `smoke`, `vector`, and `ccloud` sections share the same run ID and cloud-resource context. The composer rejects mismatched runs, cluster identities, regions, artifacts, model metadata, or missing observations.
+
+## What this receipt does not prove
+
+<Warning>
+  This is point-in-time evidence. It does not certify continuous uptime, future configuration, absence of every vulnerability, or correctness for inputs outside the observed run.
+</Warning>
+
+The receipt also does not replace per-release evaluation artifacts and audit events. Those establish why a specific memory candidate was approved and promoted.
+
+## Regenerate the receipt
+
+Run the evidence commands from an authenticated environment with access to the expected AWS account and CockroachDB cluster:
+
+```bash
+npm run evidence:context
+npm run aws:smoke
+npm run vector:evidence
+npm run ccloud:evidence
+npm run cloud:evidence
+npm run production:audit
+```
+
+The scripts fail closed on missing providers, wrong identity, stale correlation, an unready vector index, mismatched artifact digest, or malformed output. Publish only the redacted result.

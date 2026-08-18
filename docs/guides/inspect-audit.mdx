@@ -1,0 +1,28 @@
+---
+title: How to inspect release evidence
+description: Trace a memory release across request IDs, candidate state, evaluation evidence, and audit lineage.
+icon: history
+---
+
+Use this guide to answer who changed memory, what evidence supported the change, and which version agents could retrieve afterward.
+
+<Steps>
+  <Step title="Start from the resource ID">
+    Copy the candidate, evaluation-run, memory-version, or lineage ID from its detail page. Open **Audit** and locate events that reference the ID.
+  </Step>
+  <Step title="Follow request IDs">
+    Each API response returns `x-request-id`. Match the request ID to screening, evaluation-request, review, promotion, or rollback audit events. Use the same value when correlating CloudWatch or X-Ray observations.
+  </Step>
+  <Step title="Inspect the evaluation receipt">
+    Open **Evaluations**, select the run bound to the review, and inspect scenario results, behavioral differences, provider request metadata, and artifact URI. A queued message is not terminal evidence.
+  </Step>
+  <Step title="Confirm release lineage">
+    Open the memory detail and verify the candidate ID, version, namespace revision, active status, source provenance, and activation history agree with the audit events.
+  </Step>
+</Steps>
+
+The inspection is complete when the candidate digest, evaluation run, review, active memory version, namespace revision, and request IDs form one consistent chain.
+
+<Note>
+  The production evidence page documents an infrastructure smoke receipt. It supplements, but does not replace, per-release evidence and audit events.
+</Note>

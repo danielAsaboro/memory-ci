@@ -1,0 +1,107 @@
+---
+title: HTTP interface
+description: Authentication, headers, validation, routes, and mutation bodies for the Stash v1 service.
+icon: braces
+---
+
+The application API uses `/v1` paths. The Vercel reviewer console reaches it through a signed same-origin gateway; direct service clients authenticate with a bearer token.
+
+## Request contract
+
+| Requirement | Behavior |
+| --- | --- |
+| Authentication | `Authorization: Bearer <token>` is required. |
+| Membership | The authenticated subject must belong to the token's tenant. |
+| Reviewer role | Screening, evaluation, review, promotion, and rollback require `admin` or `reviewer`. |
+| Idempotency | Every lifecycle mutation requires `Idempotency-Key`. Candidate creation also requires it and returns `202`. |
+| Request correlation | Send `x-request-id` or let the service generate one. Every JSON response returns it as a header and body field. |
+| JSON validation | Bodies are strict. Unknown keys or invalid values produce `invalid_input`. |
+
+## Read routes
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/overview` | Workspace release metrics and summary. |
+| `GET` | `/v1/agents` | Registered agents and rollout state. |
+| `GET` | `/v1/memory` | Memory versions visible to the workspace. |
+| `GET` | `/v1/memory/{memoryId}` | One memory version with lineage and provenance. |
+| `GET` | `/v1/candidates` | Candidate change queue. |
+| `GET` | `/v1/candidates/{candidateId}` | One candidate and its evidence state. |
+| `GET` | `/v1/memory/{memoryId}/explain` | Provenance and release explanation for a memory. |
+| `GET` | `/v1/namespaces/{namespaceId}/revision` | Current namespace revision. |
+| `GET` | `/v1/evaluations` | Evaluation runs. |
+| `GET` | `/v1/evaluations/{evaluationRunId}` | One run with scenario results and artifacts. |
+| `GET` | `/v1/audit` | Tenant-scoped audit events. |
+| `GET` | `/v1/workspace/status` | Workspace onboarding and readiness status. |
+
+## Mutation routes
+
+| Method | Path | Body | Success |
+| --- | --- | --- | --- |
+| `POST` | `/v1/candidates` | Candidate input below | `202` |
+| `POST` | `/v1/candidates/{candidateId}/screen` | `{}` | `202` |
+| `POST` | `/v1/candidates/{candidateId}/evaluate` | `{}` | `202` |
+| `POST` | `/v1/candidates/{candidateId}/reviews` | Review body below | `200` |
+| `POST` | `/v1/candidates/{candidateId}/promote` | Promotion body below | `200` |
+| `POST` | `/v1/lineages/{lineageId}/rollback` | Rollback body below | `200` |
+| `POST` | `/v1/memory/search` | Search body below | `200` |
+
+## Candidate body
+
+```json
+{
+  "namespaceId": "00000000-0000-4000-8000-000000000000",
+  "memoryClass": "policy",
+  "trustClass": "observed",
+  "canonicalText": "Refunds above $150 require human review.",
+  "payload": {},
+  "source": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "sourceType": "operator",
+    "content": "Approved refund policy source text",
+    "contentDigest": "<64 lowercase hexadecimal characters>",
+    "sourceUri": "https://example.test/policies/refunds"
+  }
+}
+```
+
+Valid memory classes are `policy`, `fact`, `preference`, `episode`, `skill`, and `constraint`. Valid trust classes are `untrusted`, `observed`, `authenticated`, and `authoritative`. Elevated trust requires the complete Ed25519 signature fields.
+
+## Lifecycle bodies
+
+```json Review
+{
+  "evaluationRunId": "<evaluation ID>",
+  "decision": "approved",
+  "reason": "Scenario suite passed and provenance was verified."
+}
+```
+
+```json Promotion
+{
+  "reviewId": "<review ID>",
+  "stableKey": "refund-human-review",
+  "reason": "Release the evaluated threshold."
+}
+```
+
+```json Rollback
+{
+  "targetVersionId": "<historical memory-version ID>",
+  "reason": "Restore the prior threshold after observed regression."
+}
+```
+
+```json Semantic search
+{
+  "namespaceId": "<namespace ID>",
+  "agentId": "<optional agent ID>",
+  "query": "When does a refund require human review?",
+  "purpose": "answer a support request",
+  "revision": 7
+}
+```
+
+## Error codes
+
+Domain responses use `invalid_transition`, `invalid_input`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `stale_review`, `provider_unavailable`, or `inconclusive`. The response includes a safe message and request ID; internal exceptions and secrets are not returned.

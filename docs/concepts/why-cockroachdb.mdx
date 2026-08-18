@@ -1,0 +1,29 @@
+---
+title: Why Stash uses CockroachDB
+description: How transactions, tenant-scoped keys, vector indexing, revisions, and the outbox support governed memory releases.
+icon: database-zap
+---
+
+Stash needs semantic retrieval and release correctness to agree on the same active memory. CockroachDB stores both the operational release graph and the vector-searchable memory versions so promotion cannot succeed in one system while retrieval continues reading another.
+
+## Serializable release operations
+
+Promotion and rollback change several related records: candidate state, active memory version, namespace revision, activation event, audit event, and outbox event. The repository wraps these changes in transactions and retries bounded serialization failures identified by SQLSTATE `40001`.
+
+## Database-enforced invariants
+
+Composite primary and foreign keys include `tenant_id`. Unique constraints prevent duplicate content and idempotency keys within a tenant. A partial unique index permits only one active memory version for a tenant and lineage.
+
+## Distributed vector retrieval
+
+Memory embeddings use `VECTOR(1024)`. The production migration creates `memory_versions_active_embedding_idx`, a CockroachDB vector index that includes tenant, namespace, active state, and the embedding. Retrieval filters to active tenant memory before ranking by cosine distance.
+
+## Revisions as a cache and behavior contract
+
+Each namespace has a monotonically advancing revision. Promotion and rollback return the new revision, and agent reads record which revision they consumed. A client can invalidate cached memory when the namespace revision changes.
+
+## Transactional outbox
+
+External evidence and event delivery cannot participate in a database transaction. Stash writes the intent to `outbox_events` in the same transaction as the lifecycle change. A worker claims pending events, performs Bedrock, S3, and EventBridge work, and marks delivery separately with retry metadata.
+
+This architecture does not make external providers transactional. It makes the **decision to request external work** durable and auditable alongside the release state.

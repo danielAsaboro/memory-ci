@@ -1,0 +1,35 @@
+---
+title: Lifecycle states
+description: Exact candidate states, events, and valid transitions.
+icon: list-tree
+---
+
+The candidate state machine rejects every transition not listed below with `invalid_transition`.
+
+| Current state | Event | Next state |
+| --- | --- | --- |
+| `proposed` | `begin_screening` | `screening` |
+| `proposed` | `quarantine` | `quarantined` |
+| `proposed` | `reject` | `rejected` |
+| `screening` | `screening_passed` | `evaluating` |
+| `screening` | `begin_evaluation` | `evaluating` |
+| `screening` | `quarantine` | `quarantined` |
+| `screening` | `reject` | `rejected` |
+| `screening` | `provider_failed` | `failed` |
+| `evaluating` | `evaluation_passed` | `review_required` |
+| `evaluating` | `request_review` | `review_required` |
+| `evaluating` | `quarantine` | `quarantined` |
+| `evaluating` | `reject` | `rejected` |
+| `evaluating` | `provider_failed` | `failed` |
+| `review_required` | `approve` | `approved` |
+| `review_required` | `reject` | `rejected` |
+| `review_required` | `quarantine` | `quarantined` |
+| `approved` | `activate` | `active` |
+| `approved` | `reject` | `rejected` |
+| `active` | `supersede` | `superseded` |
+| `active` | `roll_back` | `rolled_back` |
+| `active` | `expire` | `expired` |
+
+## Terminal states
+
+`quarantined`, `rejected`, `superseded`, `rolled_back`, `expired`, and `failed` have no outgoing candidate transitions. Restoring a historical payload creates a new version and revision; it does not transition a terminal row back to `active`.

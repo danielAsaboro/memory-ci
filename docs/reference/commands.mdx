@@ -1,0 +1,59 @@
+---
+title: Commands
+description: npm commands for development, verification, documentation, infrastructure, evidence, and deployment.
+icon: terminal-square
+---
+
+Run commands from the repository root.
+
+## Application
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Next.js development server. |
+| `npm run build` | Create the production Next.js build. |
+| `npm start` | Serve the production build. |
+| `npm run demo:seed` | Seed the local demo workspace. |
+| `npm run demo:reset` | Reset migrations and demo data to a repeatable local state. |
+
+## Tests and static checks
+
+| Command | Purpose |
+| --- | --- |
+| `npm test` | Run the Vitest unit suite. |
+| `npm run test:integration` | Run CockroachDB integration tests. |
+| `npm run test:e2e` | Run Playwright desktop and mobile lifecycle/accessibility tests. |
+| `npm run test:starter` | Build and verify rendered starter HTML. |
+| `npm run lint` | Run ESLint with generated-output exclusions. |
+| `npm run typecheck` | Run TypeScript without emitting files. |
+| `npm run verify` | Run unit, integration, lint, typecheck, and production build checks. |
+
+## Documentation
+
+| Command | Purpose |
+| --- | --- |
+| `npm run docs:dev` | Start a local Mintlify preview without opening a browser. |
+| `npm run docs:validate` | Validate Mintlify configuration and MDX. |
+| `npm run docs:links` | Check internal links and heading anchors. |
+
+## Database and infrastructure
+
+| Command | Purpose |
+| --- | --- |
+| `npm run db:generate` | Generate Drizzle migration output from schema changes. |
+| `npm run db:migrate` | Apply production migrations with cluster-identity checks. |
+| `npm run infra:validate` | Lint the AWS SAM template. |
+| `npm run infra:build` | Build the SAM application. |
+| `npm run production:parameters` | Generate protected production parameters from the environment. |
+| `npm run deploy:production` | Run the guarded production deployment script. |
+
+## Production evidence
+
+| Command | Purpose |
+| --- | --- |
+| `npm run aws:smoke` | Verify AWS identity, stack resources, providers, and workspace bootstrap. |
+| `npm run evidence:context` | Establish the authenticated, fail-closed evidence context. |
+| `npm run vector:evidence` | Verify the vector column, index visibility, readiness, and query plan. |
+| `npm run ccloud:evidence` | Verify cluster identity and state with CockroachDB Cloud tooling. |
+| `npm run cloud:evidence` | Compose the redacted production evidence receipt. |
+| `npm run production:audit` | Validate the receipt and production contract. |

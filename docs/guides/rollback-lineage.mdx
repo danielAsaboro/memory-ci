@@ -1,0 +1,31 @@
+---
+title: How to roll back a memory lineage
+description: Restore a prior payload by creating a new forward revision.
+icon: undo-2
+---
+
+Use rollback when an active memory version causes harmful or incorrect agent behavior and a known prior version is safe to restore.
+
+## Required inputs
+
+- Reviewer or administrator authorization
+- The lineage ID
+- The target historical memory-version ID
+- A reason suitable for the permanent audit trail
+
+<Steps>
+  <Step title="Identify the active and target versions">
+    Open **Memory**, select the affected lineage, and compare the active version with its history. Confirm the target version contains the payload you intend agents to read.
+  </Step>
+  <Step title="Record the rollback reason">
+    Select **Roll back**, choose the target version, and describe the observed problem and why the target is appropriate.
+  </Step>
+  <Step title="Confirm the new revision">
+    Submit the rollback once. The operation is idempotent and creates a new version and namespace revision; it does not mutate the target row in place.
+  </Step>
+  <Step title="Verify retrieval and audit history">
+    Confirm the memory explorer shows the restored payload as active, the namespace revision increased, and **Audit** contains `memory.rolled_back` for the new memory version.
+  </Step>
+</Steps>
+
+If a client caches memory, compare its recorded revision with `GET /v1/namespaces/{namespaceId}/revision` and refresh when the value changes.

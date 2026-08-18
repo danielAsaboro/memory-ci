@@ -1,0 +1,53 @@
+---
+title: How to deploy the production stack
+description: Migrate CockroachDB, deploy the AWS evidence plane, configure Vercel, and run fail-closed production checks.
+icon: cloud-upload
+---
+
+This guide assumes an existing CockroachDB Cloud cluster, AWS account, Vercel project, DNS control for `trystash.xyz`, and administrative credentials held outside Git.
+
+<Steps>
+  <Step title="Store the protected database connection">
+    Create separate migration and restricted runtime SQL principals. Store the runtime connection URL in AWS Secrets Manager and record only its secret ARN in deployment parameters.
+  </Step>
+  <Step title="Apply database migrations">
+    Export the administrative `DATABASE_URL` and `COCKROACH_SQL_CLUSTER_ID`, then run:
+
+    ```bash
+    npm run db:migrate
+    ```
+
+    Confirm all files in `db/migrations/` apply and the vector index job reaches a ready state before serving production retrieval.
+  </Step>
+  <Step title="Validate and build AWS infrastructure">
+    ```bash
+    npm run infra:validate
+    npm run infra:build
+    ```
+
+    Keep the production SAM parameter file ignored. It contains secret references and protected runtime values.
+  </Step>
+  <Step title="Deploy the AWS stack">
+    ```bash
+    npm run deploy:production
+    ```
+
+    The template provisions the API, API/outbox/sandbox Lambdas, Cognito pool, versioned S3 bucket, EventBridge bus, CloudWatch logs and alarms, X-Ray tracing, and least-responsibility IAM roles.
+  </Step>
+  <Step title="Configure the Vercel gateway">
+    Set `STASH_API_BASE_URL`, `STASH_BOOTSTRAP_KEY`, `STASH_SESSION_SECRET`, and `STASH_TRUSTED_SOURCE_KEYS` as server-only production variables. Set `NEXT_PUBLIC_APP_URL=https://trystash.xyz` as the sole browser-visible runtime setting.
+  </Step>
+  <Step title="Generate and audit production evidence">
+    ```bash
+    npm run aws:smoke
+    npm run vector:evidence
+    npm run ccloud:evidence
+    npm run cloud:evidence
+    npm run production:audit
+    ```
+
+    Treat any missing, malformed, mismatched, or stale evidence as failure. Publish only the redacted receipt.
+  </Step>
+</Steps>
+
+The deployment is complete when the live onboarding flow creates a persisted workspace, the full release lifecycle succeeds, the vector index is visible and ready, and the redacted evidence audit passes.

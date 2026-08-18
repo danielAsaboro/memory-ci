@@ -1,0 +1,33 @@
+---
+title: Security and provenance model
+description: Identity, tenant membership, reviewer authorization, signed provenance, and fail-closed evidence behavior.
+icon: shield-alert
+---
+
+Stash assumes that durable memory is an authority surface. A malicious or weakly sourced instruction can influence every later agent run, so identity, provenance, evidence, and release authorization are separate controls.
+
+## Identity and tenant isolation
+
+The API verifies a bearer token and checks that its subject belongs to the requested tenant. Service operations receive a context containing the tenant, principal, request ID, and roles. Database access uses tenant-scoped keys and predicates rather than trusting a browser-provided tenant identifier.
+
+## Reviewer authorization
+
+Screening, evaluation, review, promotion, and rollback require an `admin` or `reviewer` role. Read endpoints still require authentication and tenant membership.
+
+## Elevated provenance
+
+`authenticated` and `authoritative` candidates require complete Ed25519 provenance fields: signature identity, key ID, algorithm, and signature. The service verifies trusted-source keys and content digests before preserving elevated trust. Missing, invalid, expired, or tampered signatures do not retain elevated status.
+
+## Evidence-bound review
+
+An approval is not a free-floating boolean. It binds the candidate digest, evaluation run, baseline revision, and policy version. Promotion checks that binding again, preventing approval reuse after evidence or state changes.
+
+## Fail-closed outcomes
+
+Provider timeouts, malformed Bedrock output, missing artifacts, and incomplete scenario results produce an inconclusive or failed state. They do not enable approval. Deterministic poisoning findings can quarantine a candidate before semantic evaluation.
+
+## Secret boundaries
+
+Database URLs, bootstrap keys, session secrets, trusted-source registries, and AWS resource identifiers remain server-only. The sole intended browser-visible environment value is `NEXT_PUBLIC_APP_URL`.
+
+Read [configuration reference](/reference/configuration) before deployment and the repository [SECURITY.md](https://github.com/danielAsaboro/stash-cockcroachdb/blob/main/SECURITY.md) for disclosure and operational guidance.

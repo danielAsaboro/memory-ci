@@ -1,0 +1,28 @@
+---
+title: Technical differentiation
+description: Where Stash differs from direct memory writes and retrieval-only memory systems.
+icon: scale
+---
+
+Stash's differentiation is not that it stores text embeddings. Its implemented contribution is a release protocol between memory creation and agent consumption.
+
+| Capability | Direct memory write | Retrieval-only memory system | Stash |
+| --- | --- | --- | --- |
+| Source provenance | Optional metadata | Often metadata attached to a record | Immutable source digest, trust class, and signed elevated provenance |
+| Poisoning control | Application-specific | Usually outside retrieval | Deterministic screening can quarantine before evaluation |
+| Behavioral evidence | Not required | Retrieval quality may be measured | Stored scenarios compare baseline and candidate trajectories |
+| Human review | Informal or record-level flag | Usually external workflow | Review binds candidate digest, evaluation run, baseline revision, and policy version |
+| Release atomicity | Write becomes visible immediately | New record becomes searchable | Promotion transaction establishes one active lineage version and advances revision |
+| Agent cache contract | Timestamp or ad hoc invalidation | Query again | Namespace revision exposes a monotonic invalidation boundary |
+| Audit lineage | Mutable history or application logs | Query/access logs | Tenant-scoped release and read events with resource and request identities |
+| Rollback | Delete, overwrite, or reactivate | Delete or change filtering | New forward revision restores an earlier payload without erasing history |
+
+## Why the combination matters
+
+Each control covers a different failure mode. Provenance does not reveal behavioral regression. An evaluation without evidence-bound review can be approved after its assumptions change. Audit logs without transactionally correct promotion can describe a state agents never actually read. Rollback without immutable history hides the release that caused harm.
+
+Stash keeps the release graph, audit lineage, active-version invariant, revisions, and semantic memory in CockroachDB. Bedrock, S3, and EventBridge remain external providers, while the transactional outbox makes the intent to invoke them durable alongside lifecycle state.
+
+## Honest boundary
+
+This architecture reduces specific memory-release risks; it does not eliminate model error, malicious reviewers, compromised credentials, flawed scenarios, or provider outages. A prize decision also depends on judging criteria beyond implementation quality. The production receipt documents observed infrastructure, not a competition outcome.

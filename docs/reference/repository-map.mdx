@@ -1,0 +1,24 @@
+---
+title: Repository map
+description: Maintained source directories and their responsibilities.
+icon: folder-tree
+---
+
+| Path | Responsibility |
+| --- | --- |
+| `app/` | Next.js reviewer console, workspace session boundary, same-origin API gateway, and route-level UI. |
+| `src/contracts/` | Zod schemas and cross-boundary data contracts. |
+| `src/domain/` | Candidate lifecycle, screening, risk policy, relations, and behavioral differences. |
+| `src/services/` | Candidate ingestion, evaluation, review, promotion, retrieval, explanation, rollback, and workspace bootstrap. |
+| `src/db/` | CockroachDB connection management, repositories, transactions, audit records, and outbox persistence. |
+| `db/migrations/` | Ordered SQL schema, tenant roles, signature evidence, lifecycle idempotency, and vector-index migrations. |
+| `src/api/` | Authentication helpers, HTTP responses, route matching, authorization, and validation. |
+| `src/aws/` | Bedrock, S3, EventBridge, Secrets Manager, and sandbox adapters. |
+| `src/lambda/` | API, outbox, and behavioral-sandbox Lambda entry points. |
+| `infra/` | AWS SAM template, guarded parameters, and infrastructure tests. |
+| `scripts/` | Migration, deployment, demo, smoke, and production-evidence tooling. |
+| `tests/e2e/` | Playwright lifecycle, accessibility, mobile navigation, poisoning, and rollback tests. |
+| `public/` | Application favicons, social image, generated lineage artwork, and public redacted evidence. |
+| `docs/` | Mintlify documentation plus retained, ignored submission-production assets. |
+
+The root `package.json` is the command index. `.env.example` defines configuration shapes. `SECURITY.md` defines disclosure and deployment expectations.

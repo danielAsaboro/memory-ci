@@ -1,0 +1,42 @@
+---
+title: Stash documentation
+description: Release control for durable AI-agent memory.
+icon: shield-check
+---
+
+![A governed memory lineage branching through review and release stages](/images/stash-lineage-hero.jpg)
+
+Stash is a release control plane for durable AI-agent memory. It puts proposed memory through provenance checks, poisoning screens, behavioral evaluation, evidence-bound human review, atomic promotion, revision-aware retrieval, and forward-only rollback before agents consume it.
+
+Stash is not a generic vector database interface. It governs **which memory version becomes active, why it was approved, what evidence supported it, and how to reverse it without rewriting history**.
+
+<Columns cols={2}>
+  <Card title="Run Stash locally" icon="terminal" href="/quickstart">
+    Start CockroachDB, create a demo workspace, and open the reviewer console.
+  </Card>
+  <Card title="Release your first memory" icon="git-pull-request-create" href="/tutorials/first-release">
+    Follow one candidate from proposal through promotion and rollback.
+  </Card>
+  <Card title="Understand the architecture" icon="network" href="/concepts/architecture">
+    See the trust boundaries across Vercel, AWS, CockroachDB, and Bedrock.
+  </Card>
+  <Card title="Use the HTTP interface" icon="braces" href="/reference/http-api">
+    Look up authentication, idempotency, routes, and validation behavior.
+  </Card>
+</Columns>
+
+<Info>
+  The live reviewer console is available at [trystash.xyz](https://trystash.xyz). Production evidence is a point-in-time receipt, not a promise of continuous availability.
+</Info>
+
+## The release loop
+
+1. **Propose** immutable content with source provenance.
+2. **Screen** deterministic poisoning and policy risks.
+3. **Evaluate** behavioral change against stored scenarios.
+4. **Review** the exact candidate digest, evaluation run, policy version, and baseline revision.
+5. **Promote** one active version transactionally.
+6. **Retrieve** tenant-scoped active memory with revision metadata.
+7. **Roll back** by creating a new forward revision that reactivates a prior payload.
+
+Continue with the [local quickstart](/quickstart), or read [why CockroachDB is part of the control protocol](/concepts/why-cockroachdb).

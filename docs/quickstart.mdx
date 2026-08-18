@@ -1,0 +1,73 @@
+---
+title: Local quickstart
+description: Start Stash locally and create an isolated demo workspace.
+icon: rocket
+---
+
+This path starts the reviewer console and its CockroachDB-backed demo environment. At the end, you will have an isolated workspace with seeded memory, evaluation scenarios, and audit history.
+
+## Prerequisites
+
+- Node.js 22.13 or newer
+- npm
+- Docker with Compose support
+- An unused local port `3000`
+
+<Steps>
+  <Step title="Create local configuration">
+    From the repository root, copy the safe configuration template.
+
+    ```bash
+    cp .env.example .env.local
+    ```
+
+    Local development can override server settings. Never expose database URLs, bootstrap keys, session secrets, trusted-source key material, or AWS secrets through a `NEXT_PUBLIC_` variable.
+  </Step>
+
+  <Step title="Install application dependencies">
+    ```bash
+    npm ci
+    ```
+
+    The lockfile defines the dependency graph used by CI.
+  </Step>
+
+  <Step title="Start CockroachDB">
+    ```bash
+    docker compose up -d
+    ```
+
+    The integration database listens on `localhost:26258` with TLS disabled for local use only.
+  </Step>
+
+  <Step title="Reset and seed the demo">
+    ```bash
+    npm run demo:reset
+    ```
+
+    This applies migrations and creates a repeatable local workspace. It does not mutate the production cluster.
+  </Step>
+
+  <Step title="Start the reviewer console">
+    ```bash
+    npm run dev
+    ```
+
+    Open [http://localhost:3000/onboarding](http://localhost:3000/onboarding). The page should show the workspace checklist and links to the change queue, evaluations, memory explorer, and audit log.
+  </Step>
+</Steps>
+
+## Confirm the environment
+
+Run the fast application checks in another terminal:
+
+```bash
+npm test
+npm run typecheck
+```
+
+When both commands pass, continue to [release your first governed memory](/tutorials/first-release).
+
+<Warning>
+  The local database configuration is deliberately permissive. Use the restricted runtime principal, TLS, AWS Secrets Manager, and the production migration workflow outside local development.
+</Warning>

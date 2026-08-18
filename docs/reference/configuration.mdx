@@ -1,0 +1,50 @@
+---
+title: Configuration
+description: Runtime, deployment, test, and browser-visible environment variables.
+icon: settings-2
+---
+
+All configuration is server-only unless the variable name begins with `NEXT_PUBLIC_`. Do not commit `.env.local`, production parameter files, database URLs, session secrets, bootstrap keys, or private signing material.
+
+## Application and AWS runtime
+
+| Variable | Required | Scope and behavior |
+| --- | --- | --- |
+| `DATABASE_SECRET_ARN` | Production | Secrets Manager ARN containing the restricted CockroachDB runtime URL. |
+| `AWS_REGION` | Production | Region used by AWS SDK clients. |
+| `BEDROCK_MODEL_ID` | Production | Structured semantic-risk evaluator model or inference profile. |
+| `BEDROCK_EMBEDDING_MODEL_ID` | Production | Embedding model; production uses a 1024-dimension Titan model. |
+| `BEDROCK_TIMEOUT_MS` | Optional | Positive evaluator timeout up to `120000`; defaults to `20000`. |
+| `EVALUATION_POLICY_VERSION` | Optional | Policy label recorded on evaluation bindings; defaults to `v1` in the worker. |
+| `EVIDENCE_BUCKET` | Production | Private, encrypted, versioned S3 evidence bucket. |
+| `EVENT_BUS_NAME` | Production | EventBridge bus for lifecycle observations. |
+| `STASH_TRUSTED_SOURCE_KEYS` | Production | Server-only JSON registry of trusted Ed25519 public keys. |
+
+## Vercel session boundary
+
+| Variable | Required | Scope and behavior |
+| --- | --- | --- |
+| `STASH_API_BASE_URL` | Production | HTTP or HTTPS base URL for the AWS API. Trailing slash is removed. |
+| `STASH_BOOTSTRAP_KEY` | Production | Server-only credential for workspace creation. |
+| `STASH_SESSION_SECRET` | Production | Server-only signing secret of at least 32 bytes. |
+| `NEXT_PUBLIC_APP_URL` | Production | Canonical public application URL. This is the only intended browser-visible runtime variable. |
+
+## Migration and evidence commands
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Migration and production scripts | Administrative CockroachDB connection used outside the restricted runtime. |
+| `COCKROACH_SQL_CLUSTER_ID` | Migration/evidence scripts | Confirms the expected CockroachDB SQL cluster identity. |
+| AWS credential variables or profile | AWS evidence/deployment scripts | Authorize CloudFormation, Lambda, S3, EventBridge, Bedrock, CloudWatch, X-Ray, and STS checks. |
+
+## Test configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TEST_DATABASE_URL` | Local CockroachDB on port `26258` | Restricted test connection for integration tests that do not require administration. |
+| `TEST_DATABASE_ADMIN_URL` | Local CockroachDB on port `26258` | Administrative test connection for migrations and isolated database setup. |
+| `PLAYWRIGHT_BASE_URL` | Local server started by Playwright | Runs browser tests against an external deployment when set. |
+
+<Warning>
+  Values in `.env.example` are shapes and examples, not production credentials. Replace every placeholder through the appropriate secret or deployment system.
+</Warning>

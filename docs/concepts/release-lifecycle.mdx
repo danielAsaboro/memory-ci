@@ -1,0 +1,45 @@
+---
+title: Memory release lifecycle
+description: The candidate state machine, evidence gate, promotion protocol, and forward-only rollback model.
+icon: workflow
+---
+
+Stash treats durable memory as a release artifact. A candidate is immutable input to a state machine; a memory version is the released result of an approved candidate.
+
+```mermaid
+stateDiagram-v2
+  [*] --> proposed
+  proposed --> screening: begin_screening
+  proposed --> quarantined: quarantine
+  proposed --> rejected: reject
+  screening --> evaluating: screening_passed / begin_evaluation
+  screening --> quarantined: quarantine
+  screening --> rejected: reject
+  screening --> failed: provider_failed
+  evaluating --> review_required: evaluation_passed / request_review
+  evaluating --> quarantined: quarantine
+  evaluating --> rejected: reject
+  evaluating --> failed: provider_failed
+  review_required --> approved: approve
+  review_required --> rejected: reject
+  review_required --> quarantined: quarantine
+  approved --> active: activate
+  approved --> rejected: reject
+  active --> superseded: supersede
+  active --> rolled_back: roll_back
+  active --> expired: expire
+```
+
+## Evidence before authority
+
+Screening checks deterministic risk and source rules. Evaluation binds results to the candidate and the baseline namespace revision. Review then binds the candidate digest, evaluation run, baseline revision, and policy version. Promotion rejects a stale or mismatched review.
+
+## One active version per lineage
+
+The database enforces one active version for each tenant and lineage. Promotion deactivates the previous version, creates the next version, advances the namespace revision, and records the activation and audit events transactionally.
+
+## Rollback moves forward
+
+Rollback does not reactivate a row in place or delete an unsafe release. It creates a new memory version and a new namespace revision using a prior payload. This preserves what agents saw, who changed it, and why the system moved back.
+
+For lookup-oriented details, see [lifecycle states](/reference/lifecycle-states). For operational steps, see [how to roll back a lineage](/guides/rollback-lineage).

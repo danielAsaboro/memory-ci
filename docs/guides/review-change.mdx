@@ -1,0 +1,34 @@
+---
+title: How to review a memory change
+description: Screen, evaluate, and approve or reject a candidate against its exact evidence.
+icon: scan-search
+---
+
+Use this guide when a candidate is waiting in the change queue and you are authorized as a reviewer or administrator.
+
+## Before you begin
+
+- Confirm the candidate belongs to the intended workspace and namespace.
+- Inspect the source URI, content digest, trust class, and signature status.
+- Do not approve a candidate whose source or intended behavior you cannot explain.
+
+<Steps>
+  <Step title="Screen deterministic risk">
+    Open **Changes**, select the candidate, and choose **Screen candidate**. Review every finding. A quarantined candidate is terminal and cannot move to approval.
+  </Step>
+  <Step title="Run the evaluation suite">
+    Choose **Run evaluation** and wait for a terminal receipt. **Passed** means every required result completed without regression. **Inconclusive** or **failed** keeps approval disabled.
+  </Step>
+  <Step title="Compare the evidence binding">
+    Confirm the evaluation belongs to the same candidate digest and current baseline revision. Review scenario-level behavioral differences and artifact references.
+  </Step>
+  <Step title="Record a reasoned decision">
+    Enter a review reason that explains the decision, then approve, reject, or quarantine. The resulting review records the candidate digest, evaluation run, baseline revision, and policy version.
+  </Step>
+</Steps>
+
+The task is complete when the candidate shows the recorded review state and the audit page contains a matching `candidate.approved`, `candidate.rejected`, or quarantine event with its request ID.
+
+<Warning>
+  Approval does not promote memory automatically. Promotion is a separate transaction so review authority and release authority remain visible in the audit lineage.
+</Warning>

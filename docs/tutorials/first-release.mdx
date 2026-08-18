@@ -1,0 +1,49 @@
+---
+title: Release your first memory
+description: Guide one memory candidate through screening, evaluation, approval, promotion, retrieval, and rollback.
+icon: git-merge
+---
+
+This tutorial uses the reviewer console created by the [local quickstart](/quickstart). You will release a refund-policy memory, observe its active revision, and roll it back without deleting history.
+
+<Steps>
+  <Step title="Open the change queue">
+    Visit `http://localhost:3000/changes` and select **Propose memory**. The workspace provider fills the current namespace ID for you.
+  </Step>
+
+  <Step title="Propose a policy candidate">
+    Set the memory class to **policy**, the trust class to **observed**, and enter:
+
+    ```text
+    Refunds above $150 require human review.
+    ```
+
+    Use a valid source URL and source content that describes the policy. Submit the proposal. Stash returns a generated candidate ID and stores the content and source digests.
+  </Step>
+
+  <Step title="Screen the candidate">
+    Open the candidate and select **Screen candidate**. A safe candidate advances to `evaluating`. A deterministic poisoning or provenance failure is quarantined and cannot be approved.
+  </Step>
+
+  <Step title="Run behavioral evaluation">
+    Select **Run evaluation**. Wait for the status to report **Evaluation Passed**. The evaluation is asynchronous: the API first queues evidence work, then the outbox worker records the terminal receipt.
+  </Step>
+
+  <Step title="Approve the exact evidence binding">
+    Enter a review reason and approve the candidate. The review binds the candidate digest to the evaluation run, baseline namespace revision, and policy version. Changing any bound input makes the review stale.
+  </Step>
+
+  <Step title="Promote the memory">
+    Enter a stable key such as `refund-human-review` and a promotion reason. Promote the candidate. Stash creates a new memory version and advances the namespace revision in one transaction.
+  </Step>
+
+  <Step title="Confirm agent-visible retrieval">
+    Open **Memory** and locate the promoted text. The active version shows its lineage, version, namespace revision, source, and release history. Semantic search reads only active, tenant-scoped memory.
+  </Step>
+
+  <Step title="Roll back without erasing history">
+    Open the memory lineage, choose an earlier version, provide a rollback reason, and confirm. Stash writes a new forward revision using the earlier payload; the prior release and its audit events remain intact.
+  </Step>
+</Steps>
+
+You have completed the full release loop. Read [the release lifecycle](/concepts/release-lifecycle) for the exact state model, or [how to inspect audit evidence](/guides/inspect-audit) for operational review.
